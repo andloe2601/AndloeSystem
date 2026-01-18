@@ -1,0 +1,99 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+	<PropertyGroup>
+		<OutputType>WinExe</OutputType>
+		  <TargetFramework>net9.0-windows</TargetFramework>
+		<UseWindowsForms>true</UseWindowsForms>
+		<ImplicitUsings>enable</ImplicitUsings>
+		<Nullable>enable</Nullable>
+		<!-- Copiar appsettings.json a salida -->
+		<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+	</PropertyGroup>
+
+	<PropertyGroup>
+		<NoWarn>$(NoWarn);NETSDK1187</NoWarn>
+	</PropertyGroup>
+
+	<ItemGroup>
+	  <None Remove="Reportes\Facturacion\CotizacionRI.rdlc" />
+	  <None Remove="Reportes\Facturacion\Cotizacion_RI.xsc" />
+	  <None Remove="Reportes\Facturacion\Cotizacion_RI.xss" />
+	  <None Remove="Reportes\Facturacion\FacturaRIDataSet.xsd" />
+	  <None Remove="Reportes\FacturaRI.rdlc" />
+	</ItemGroup>
+
+	<ItemGroup>
+	  <EmbeddedResource Include="Reportes\Facturacion\CotizacionRI.rdlc" />
+	  <EmbeddedResource Include="Reportes\Facturacion\Cotizacion_RI.xsc">
+	    <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+	  </EmbeddedResource>
+	  <EmbeddedResource Include="Reportes\Facturacion\Cotizacion_RI.xss" />
+	  <EmbeddedResource Include="Reportes\Facturacion\ProFormaRI.rdlc" />
+	  <EmbeddedResource Include="Reportes\Facturacion\FacturaRI.rdlc">
+	    <CopyToOutputDirectory>Never</CopyToOutputDirectory>
+	  </EmbeddedResource>
+	  <EmbeddedResource Include="Reportes\Facturacion\FacturaRIDataSet.xsd">
+	    <Generator>MSDataSetGenerator</Generator>
+	    <LastGenOutput>FacturaRIDataSet.Designer.cs</LastGenOutput>
+	    <CopyToOutputDirectory>Never</CopyToOutputDirectory>
+	  </EmbeddedResource>
+	</ItemGroup>
+
+	<ItemGroup>
+	  <PackageReference Include="QRCoder" Version="1.7.0" />
+	  <PackageReference Include="ReportViewerCore.WinForms" Version="15.1.29" />
+	  <PackageReference Include="System.Data.SqlClient" Version="4.9.0" />
+	  <PackageReference Include="WinForms.DataVisualization" Version="1.10.0" />
+	</ItemGroup>
+
+	<ItemGroup>
+	  <ProjectReference Include="..\Data\Data.csproj" />
+	  <ProjectReference Include="..\Entidad\Entidad.csproj" />
+	  <ProjectReference Include="..\Logica\Logica.csproj" />
+	</ItemGroup>
+
+	<ItemGroup>
+	  <Compile Update="Properties\Resources.Designer.cs">
+	    <DesignTime>True</DesignTime>
+	    <AutoGen>True</AutoGen>
+	    <DependentUpon>Resources.resx</DependentUpon>
+	  </Compile>
+	  <Compile Update="Reportes\Facturacion\Cotizacion_RI.Designer.cs">
+	    <DesignTime>True</DesignTime>
+	    <AutoGen>True</AutoGen>
+	    <DependentUpon>Cotizacion_RI.xsd</DependentUpon>
+	  </Compile>
+	  <Compile Update="Reportes\Facturacion\FacturaRIDataSet.Designer.cs">
+	    <DesignTime>True</DesignTime>
+	    <AutoGen>True</AutoGen>
+	    <DependentUpon>FacturaRIDataSet.xsd</DependentUpon>
+	  </Compile>
+	  <Compile Update="Reportes\Facturacion\ProFormaRIDataSet.Designer.cs">
+	    <DesignTime>True</DesignTime>
+	    <AutoGen>True</AutoGen>
+	    <DependentUpon>ProFormaRIDataSet.xsd</DependentUpon>
+	  </Compile>
+	</ItemGroup>
+
+	<ItemGroup>
+	  <EmbeddedResource Update="Properties\Resources.resx">
+	    <Generator>ResXFileCodeGenerator</Generator>
+	    <LastGenOutput>Resources.Designer.cs</LastGenOutput>
+	  </EmbeddedResource>
+	</ItemGroup>
+
+	<ItemGroup>
+		<None Update="appsettings.json">
+			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+		</None>
+		<None Update="Reportes\Facturacion\Cotizacion_RI.xsd">
+		  <Generator>MSDataSetGenerator</Generator>
+		  <LastGenOutput>Cotizacion_RI.Designer.cs</LastGenOutput>
+		</None>
+		<None Update="Reportes\Facturacion\ProFormaRIDataSet.xsd">
+		  <Generator>MSDataSetGenerator</Generator>
+		  <LastGenOutput>ProFormaRIDataSet.Designer.cs</LastGenOutput>
+		</None>
+	</ItemGroup>
+
+</Project>
