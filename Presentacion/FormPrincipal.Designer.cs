@@ -1,7 +1,4 @@
-﻿using System.Windows.Forms;
-using static System.Net.Mime.MediaTypeNames;
-
-namespace Andloe.Presentacion
+﻿namespace Andloe.Presentacion
 {
     partial class FormPrincipal
     {
@@ -22,6 +19,7 @@ namespace Andloe.Presentacion
             btnConexion = new Button();
             btnConfigSistema = new Button();
             btnUsuarios = new Button();
+            btnConfiguracionContable = new Button();
             btnGrpConfiguracion = new Button();
             pnlNomina = new Panel();
             btnNomina = new Button();
@@ -38,23 +36,30 @@ namespace Andloe.Presentacion
             btnCompra = new Button();
             btnGrpCompra = new Button();
             pnlVenta = new Panel();
+            BtnConfiguracionVentas = new Button();
+            BtnReporte = new Button();
+            BtnRecibo = new Button();
+            BtnNc = new Button();
+            btnECN = new Button();
             btnCierresHistorico = new Button();
-            btnCierreCaja = new Button();
-            menuFacturacion = new Button();
+            btnCajas = new Button();
+            btnVendedores = new Button();
             btnClientes = new Button();
             btnPOS = new Button();
             btnGrpVenta = new Button();
             pnlContabilidad = new Panel();
             btnContabilidad = new Button();
+            btnCatalogoCuentas = new Button();
+            btnContabilidadMovimiento = new Button();
             btnGrpContabilidad = new Button();
             pnlDashboard = new Panel();
             btnDashboard = new Button();
             btnGrpDashboard = new Button();
             lblBrand = new Label();
             panelTop = new Panel();
-            lblEmpresaConectada = new Label();
             lblTitle = new Label();
             panelContent = new Panel();
+            BtnEtiquetasBarras = new Button();
             panelSidebar.SuspendLayout();
             pnlConfiguracion.SuspendLayout();
             pnlNomina.SuspendLayout();
@@ -92,13 +97,13 @@ namespace Andloe.Presentacion
             panelSidebar.Location = new Point(0, 0);
             panelSidebar.Name = "panelSidebar";
             panelSidebar.Padding = new Padding(12, 16, 12, 12);
-            panelSidebar.Size = new Size(260, 720);
+            panelSidebar.Size = new Size(260, 801);
             panelSidebar.TabIndex = 0;
             // 
             // btnSalir
             // 
             btnSalir.Dock = DockStyle.Bottom;
-            btnSalir.Location = new Point(12, 990);
+            btnSalir.Location = new Point(12, 1305);
             btnSalir.Name = "btnSalir";
             btnSalir.Size = new Size(219, 40);
             btnSalir.TabIndex = 99;
@@ -111,20 +116,21 @@ namespace Andloe.Presentacion
             pnlConfiguracion.Controls.Add(btnConexion);
             pnlConfiguracion.Controls.Add(btnConfigSistema);
             pnlConfiguracion.Controls.Add(btnUsuarios);
+            pnlConfiguracion.Controls.Add(btnConfiguracionContable);
             pnlConfiguracion.Dock = DockStyle.Top;
-            pnlConfiguracion.Location = new Point(12, 890);
+            pnlConfiguracion.Location = new Point(12, 1169);
             pnlConfiguracion.Name = "pnlConfiguracion";
-            pnlConfiguracion.Size = new Size(219, 112);
+            pnlConfiguracion.Size = new Size(219, 148);
             pnlConfiguracion.TabIndex = 16;
             pnlConfiguracion.Visible = false;
             // 
             // btnConexion
             // 
             btnConexion.Dock = DockStyle.Top;
-            btnConexion.Location = new Point(0, 72);
+            btnConexion.Location = new Point(0, 108);
             btnConexion.Name = "btnConexion";
             btnConexion.Size = new Size(219, 36);
-            btnConexion.TabIndex = 2;
+            btnConexion.TabIndex = 3;
             btnConexion.Text = "Conexión";
             btnConexion.UseVisualStyleBackColor = true;
             btnConexion.Click += btnConexion_Click;
@@ -132,10 +138,10 @@ namespace Andloe.Presentacion
             // btnConfigSistema
             // 
             btnConfigSistema.Dock = DockStyle.Top;
-            btnConfigSistema.Location = new Point(0, 36);
+            btnConfigSistema.Location = new Point(0, 72);
             btnConfigSistema.Name = "btnConfigSistema";
             btnConfigSistema.Size = new Size(219, 36);
-            btnConfigSistema.TabIndex = 1;
+            btnConfigSistema.TabIndex = 2;
             btnConfigSistema.Text = "Sistema";
             btnConfigSistema.UseVisualStyleBackColor = true;
             btnConfigSistema.Click += btnConfigSistema_Click;
@@ -143,18 +149,29 @@ namespace Andloe.Presentacion
             // btnUsuarios
             // 
             btnUsuarios.Dock = DockStyle.Top;
-            btnUsuarios.Location = new Point(0, 0);
+            btnUsuarios.Location = new Point(0, 36);
             btnUsuarios.Name = "btnUsuarios";
             btnUsuarios.Size = new Size(219, 36);
-            btnUsuarios.TabIndex = 0;
+            btnUsuarios.TabIndex = 1;
             btnUsuarios.Text = "Usuarios";
             btnUsuarios.UseVisualStyleBackColor = true;
             btnUsuarios.Click += btnUsuarios_Click;
             // 
+            // btnConfiguracionContable
+            // 
+            btnConfiguracionContable.Dock = DockStyle.Top;
+            btnConfiguracionContable.Location = new Point(0, 0);
+            btnConfiguracionContable.Name = "btnConfiguracionContable";
+            btnConfiguracionContable.Size = new Size(219, 36);
+            btnConfiguracionContable.TabIndex = 0;
+            btnConfiguracionContable.Text = "Configuración Contable";
+            btnConfiguracionContable.UseVisualStyleBackColor = true;
+            btnConfiguracionContable.Click += btnConfiguracionContable_Click;
+            // 
             // btnGrpConfiguracion
             // 
             btnGrpConfiguracion.Dock = DockStyle.Top;
-            btnGrpConfiguracion.Location = new Point(12, 848);
+            btnGrpConfiguracion.Location = new Point(12, 1127);
             btnGrpConfiguracion.Name = "btnGrpConfiguracion";
             btnGrpConfiguracion.Size = new Size(219, 42);
             btnGrpConfiguracion.TabIndex = 15;
@@ -166,7 +183,7 @@ namespace Andloe.Presentacion
             // 
             pnlNomina.Controls.Add(btnNomina);
             pnlNomina.Dock = DockStyle.Top;
-            pnlNomina.Location = new Point(12, 810);
+            pnlNomina.Location = new Point(12, 1089);
             pnlNomina.Name = "pnlNomina";
             pnlNomina.Size = new Size(219, 38);
             pnlNomina.TabIndex = 14;
@@ -186,7 +203,7 @@ namespace Andloe.Presentacion
             // btnGrpNomina
             // 
             btnGrpNomina.Dock = DockStyle.Top;
-            btnGrpNomina.Location = new Point(12, 768);
+            btnGrpNomina.Location = new Point(12, 1047);
             btnGrpNomina.Name = "btnGrpNomina";
             btnGrpNomina.Size = new Size(219, 42);
             btnGrpNomina.TabIndex = 13;
@@ -199,7 +216,7 @@ namespace Andloe.Presentacion
             pnlInventario.Controls.Add(btnInvMov);
             pnlInventario.Controls.Add(btnKardex);
             pnlInventario.Dock = DockStyle.Top;
-            pnlInventario.Location = new Point(12, 692);
+            pnlInventario.Location = new Point(12, 971);
             pnlInventario.Name = "pnlInventario";
             pnlInventario.Size = new Size(219, 76);
             pnlInventario.TabIndex = 12;
@@ -230,7 +247,7 @@ namespace Andloe.Presentacion
             // btnGrpInventario
             // 
             btnGrpInventario.Dock = DockStyle.Top;
-            btnGrpInventario.Location = new Point(12, 650);
+            btnGrpInventario.Location = new Point(12, 929);
             btnGrpInventario.Name = "btnGrpInventario";
             btnGrpInventario.Size = new Size(219, 42);
             btnGrpInventario.TabIndex = 11;
@@ -240,12 +257,13 @@ namespace Andloe.Presentacion
             // 
             // pnlProducto
             // 
+            pnlProducto.Controls.Add(BtnEtiquetasBarras);
             pnlProducto.Controls.Add(btnPromosProducto);
             pnlProducto.Controls.Add(btnProductos);
             pnlProducto.Dock = DockStyle.Top;
-            pnlProducto.Location = new Point(12, 574);
+            pnlProducto.Location = new Point(12, 817);
             pnlProducto.Name = "pnlProducto";
-            pnlProducto.Size = new Size(219, 76);
+            pnlProducto.Size = new Size(219, 112);
             pnlProducto.TabIndex = 10;
             pnlProducto.Visible = false;
             // 
@@ -274,7 +292,7 @@ namespace Andloe.Presentacion
             // btnGrpProducto
             // 
             btnGrpProducto.Dock = DockStyle.Top;
-            btnGrpProducto.Location = new Point(12, 532);
+            btnGrpProducto.Location = new Point(12, 775);
             btnGrpProducto.Name = "btnGrpProducto";
             btnGrpProducto.Size = new Size(219, 42);
             btnGrpProducto.TabIndex = 9;
@@ -286,7 +304,7 @@ namespace Andloe.Presentacion
             // 
             pnlCompra.Controls.Add(btnCompra);
             pnlCompra.Dock = DockStyle.Top;
-            pnlCompra.Location = new Point(12, 494);
+            pnlCompra.Location = new Point(12, 737);
             pnlCompra.Name = "pnlCompra";
             pnlCompra.Size = new Size(219, 38);
             pnlCompra.TabIndex = 8;
@@ -306,7 +324,7 @@ namespace Andloe.Presentacion
             // btnGrpCompra
             // 
             btnGrpCompra.Dock = DockStyle.Top;
-            btnGrpCompra.Location = new Point(12, 452);
+            btnGrpCompra.Location = new Point(12, 695);
             btnGrpCompra.Name = "btnGrpCompra";
             btnGrpCompra.Size = new Size(219, 42);
             btnGrpCompra.TabIndex = 7;
@@ -316,17 +334,76 @@ namespace Andloe.Presentacion
             // 
             // pnlVenta
             // 
+            pnlVenta.Controls.Add(BtnConfiguracionVentas);
+            pnlVenta.Controls.Add(BtnReporte);
+            pnlVenta.Controls.Add(BtnRecibo);
+            pnlVenta.Controls.Add(BtnNc);
+            pnlVenta.Controls.Add(btnECN);
             pnlVenta.Controls.Add(btnCierresHistorico);
-            pnlVenta.Controls.Add(btnCierreCaja);
-            pnlVenta.Controls.Add(menuFacturacion);
+            pnlVenta.Controls.Add(btnCajas);
+            pnlVenta.Controls.Add(btnVendedores);
             pnlVenta.Controls.Add(btnClientes);
             pnlVenta.Controls.Add(btnPOS);
             pnlVenta.Dock = DockStyle.Top;
-            pnlVenta.Location = new Point(12, 262);
+            pnlVenta.Location = new Point(12, 334);
             pnlVenta.Name = "pnlVenta";
-            pnlVenta.Size = new Size(219, 190);
+            pnlVenta.Size = new Size(219, 361);
             pnlVenta.TabIndex = 6;
             pnlVenta.Visible = false;
+            // 
+            // BtnConfiguracionVentas
+            // 
+            BtnConfiguracionVentas.Dock = DockStyle.Top;
+            BtnConfiguracionVentas.Location = new Point(0, 324);
+            BtnConfiguracionVentas.Name = "BtnConfiguracionVentas";
+            BtnConfiguracionVentas.Size = new Size(219, 36);
+            BtnConfiguracionVentas.TabIndex = 11;
+            BtnConfiguracionVentas.Text = "Configuracion Ventas";
+            BtnConfiguracionVentas.UseVisualStyleBackColor = true;
+            // 
+            // BtnReporte
+            // 
+            BtnReporte.Dock = DockStyle.Top;
+            BtnReporte.Location = new Point(0, 288);
+            BtnReporte.Name = "BtnReporte";
+            BtnReporte.Size = new Size(219, 36);
+            BtnReporte.TabIndex = 10;
+            BtnReporte.Text = "Reportes";
+            BtnReporte.UseVisualStyleBackColor = true;
+            BtnReporte.Click += BtnReporte_Click;
+            // 
+            // BtnRecibo
+            // 
+            BtnRecibo.Dock = DockStyle.Top;
+            BtnRecibo.Location = new Point(0, 252);
+            BtnRecibo.Name = "BtnRecibo";
+            BtnRecibo.Size = new Size(219, 36);
+            BtnRecibo.TabIndex = 9;
+            BtnRecibo.Text = "Recibo Pagos";
+            BtnRecibo.UseVisualStyleBackColor = true;
+            BtnRecibo.Click += BtnRecibo_Click;
+            // 
+            // BtnNc
+            // 
+            BtnNc.Dock = DockStyle.Top;
+            BtnNc.Location = new Point(0, 216);
+            BtnNc.Name = "BtnNc";
+            BtnNc.Size = new Size(219, 36);
+            BtnNc.TabIndex = 8;
+            BtnNc.Text = "Nota Credito";
+            BtnNc.UseVisualStyleBackColor = true;
+            BtnNc.Click += BtnNc_Click;
+            // 
+            // btnECN
+            // 
+            btnECN.Dock = DockStyle.Top;
+            btnECN.Location = new Point(0, 180);
+            btnECN.Name = "btnECN";
+            btnECN.Size = new Size(219, 36);
+            btnECN.TabIndex = 6;
+            btnECN.Text = "Histórico E-CF";
+            btnECN.UseVisualStyleBackColor = true;
+            btnECN.Click += btnECN_Click;
             // 
             // btnCierresHistorico
             // 
@@ -334,31 +411,32 @@ namespace Andloe.Presentacion
             btnCierresHistorico.Location = new Point(0, 144);
             btnCierresHistorico.Name = "btnCierresHistorico";
             btnCierresHistorico.Size = new Size(219, 36);
-            btnCierresHistorico.TabIndex = 4;
+            btnCierresHistorico.TabIndex = 5;
             btnCierresHistorico.Text = "Histórico de Cierres";
             btnCierresHistorico.UseVisualStyleBackColor = true;
             btnCierresHistorico.Click += btnCierresHistorico_Click;
             // 
-            // btnCierreCaja
+            // btnCajas
             // 
-            btnCierreCaja.Dock = DockStyle.Top;
-            btnCierreCaja.Location = new Point(0, 108);
-            btnCierreCaja.Name = "btnCierreCaja";
-            btnCierreCaja.Size = new Size(219, 36);
-            btnCierreCaja.TabIndex = 3;
-            btnCierreCaja.Text = "Cierre de Caja";
-            btnCierreCaja.UseVisualStyleBackColor = true;
+            btnCajas.Dock = DockStyle.Top;
+            btnCajas.Location = new Point(0, 108);
+            btnCajas.Name = "btnCajas";
+            btnCajas.Size = new Size(219, 36);
+            btnCajas.TabIndex = 3;
+            btnCajas.Text = "Factura";
+            btnCajas.UseVisualStyleBackColor = true;
+            btnCajas.Click += btnCajas_Click;
             // 
-            // menuFacturacion
+            // btnVendedores
             // 
-            menuFacturacion.Dock = DockStyle.Top;
-            menuFacturacion.Location = new Point(0, 72);
-            menuFacturacion.Name = "menuFacturacion";
-            menuFacturacion.Size = new Size(219, 36);
-            menuFacturacion.TabIndex = 2;
-            menuFacturacion.Text = "Factura/Cotizacion/Pro-Forma";
-            menuFacturacion.UseVisualStyleBackColor = true;
-            menuFacturacion.Click += menuFacturacion_Click;
+            btnVendedores.Dock = DockStyle.Top;
+            btnVendedores.Location = new Point(0, 72);
+            btnVendedores.Name = "btnVendedores";
+            btnVendedores.Size = new Size(219, 36);
+            btnVendedores.TabIndex = 2;
+            btnVendedores.Text = "Catálogo de Vendedores";
+            btnVendedores.UseVisualStyleBackColor = true;
+            btnVendedores.Click += btnVendedores_Click;
             // 
             // btnClientes
             // 
@@ -385,7 +463,7 @@ namespace Andloe.Presentacion
             // btnGrpVenta
             // 
             btnGrpVenta.Dock = DockStyle.Top;
-            btnGrpVenta.Location = new Point(12, 220);
+            btnGrpVenta.Location = new Point(12, 292);
             btnGrpVenta.Name = "btnGrpVenta";
             btnGrpVenta.Size = new Size(219, 42);
             btnGrpVenta.TabIndex = 5;
@@ -396,23 +474,47 @@ namespace Andloe.Presentacion
             // pnlContabilidad
             // 
             pnlContabilidad.Controls.Add(btnContabilidad);
+            pnlContabilidad.Controls.Add(btnCatalogoCuentas);
+            pnlContabilidad.Controls.Add(btnContabilidadMovimiento);
             pnlContabilidad.Dock = DockStyle.Top;
             pnlContabilidad.Location = new Point(12, 182);
             pnlContabilidad.Name = "pnlContabilidad";
-            pnlContabilidad.Size = new Size(219, 38);
+            pnlContabilidad.Size = new Size(219, 110);
             pnlContabilidad.TabIndex = 4;
             pnlContabilidad.Visible = false;
             // 
             // btnContabilidad
             // 
             btnContabilidad.Dock = DockStyle.Top;
-            btnContabilidad.Location = new Point(0, 0);
+            btnContabilidad.Location = new Point(0, 72);
             btnContabilidad.Name = "btnContabilidad";
             btnContabilidad.Size = new Size(219, 36);
-            btnContabilidad.TabIndex = 0;
+            btnContabilidad.TabIndex = 2;
             btnContabilidad.Text = "Asientos / Reportes (pendiente)";
             btnContabilidad.UseVisualStyleBackColor = true;
             btnContabilidad.Click += btnContabilidad_Click;
+            // 
+            // btnCatalogoCuentas
+            // 
+            btnCatalogoCuentas.Dock = DockStyle.Top;
+            btnCatalogoCuentas.Location = new Point(0, 36);
+            btnCatalogoCuentas.Name = "btnCatalogoCuentas";
+            btnCatalogoCuentas.Size = new Size(219, 36);
+            btnCatalogoCuentas.TabIndex = 1;
+            btnCatalogoCuentas.Text = "Catálogo de Cuentas";
+            btnCatalogoCuentas.UseVisualStyleBackColor = true;
+            btnCatalogoCuentas.Click += btnCatalogoCuentas_Click;
+            // 
+            // btnContabilidadMovimiento
+            // 
+            btnContabilidadMovimiento.Dock = DockStyle.Top;
+            btnContabilidadMovimiento.Location = new Point(0, 0);
+            btnContabilidadMovimiento.Name = "btnContabilidadMovimiento";
+            btnContabilidadMovimiento.Size = new Size(219, 36);
+            btnContabilidadMovimiento.TabIndex = 0;
+            btnContabilidadMovimiento.Text = "Asientos (Movimientos)";
+            btnContabilidadMovimiento.UseVisualStyleBackColor = true;
+            btnContabilidadMovimiento.Click += btnContabilidadMovimiento_Click;
             // 
             // btnGrpContabilidad
             // 
@@ -470,23 +572,12 @@ namespace Andloe.Presentacion
             // 
             // panelTop
             // 
-            panelTop.Controls.Add(lblEmpresaConectada);
             panelTop.Controls.Add(lblTitle);
             panelTop.Dock = DockStyle.Top;
             panelTop.Location = new Point(260, 0);
             panelTop.Name = "panelTop";
             panelTop.Size = new Size(940, 52);
             panelTop.TabIndex = 1;
-            // 
-            // lblEmpresaConectada
-            // 
-            lblEmpresaConectada.Anchor = AnchorStyles.Top | AnchorStyles.Right;
-            lblEmpresaConectada.Location = new Point(430, 18);
-            lblEmpresaConectada.Name = "lblEmpresaConectada";
-            lblEmpresaConectada.Size = new Size(490, 15);
-            lblEmpresaConectada.TabIndex = 1;
-            lblEmpresaConectada.Text = "Empresa: (cargando...)";
-            lblEmpresaConectada.TextAlign = ContentAlignment.MiddleRight;
             // 
             // lblTitle
             // 
@@ -502,14 +593,24 @@ namespace Andloe.Presentacion
             panelContent.Dock = DockStyle.Fill;
             panelContent.Location = new Point(260, 52);
             panelContent.Name = "panelContent";
-            panelContent.Size = new Size(940, 668);
+            panelContent.Size = new Size(940, 749);
             panelContent.TabIndex = 2;
+            // 
+            // BtnEtiquetasBarras
+            // 
+            BtnEtiquetasBarras.Dock = DockStyle.Top;
+            BtnEtiquetasBarras.Location = new Point(0, 72);
+            BtnEtiquetasBarras.Name = "BtnEtiquetasBarras";
+            BtnEtiquetasBarras.Size = new Size(219, 36);
+            BtnEtiquetasBarras.TabIndex = 2;
+            BtnEtiquetasBarras.Text = "Etiquetas Cod_Barra";
+            BtnEtiquetasBarras.UseVisualStyleBackColor = true;
             // 
             // FormPrincipal
             // 
             AutoScaleDimensions = new SizeF(7F, 15F);
             AutoScaleMode = AutoScaleMode.Font;
-            ClientSize = new Size(1200, 720);
+            ClientSize = new Size(1200, 801);
             Controls.Add(panelContent);
             Controls.Add(panelTop);
             Controls.Add(panelSidebar);
@@ -542,12 +643,16 @@ namespace Andloe.Presentacion
         private System.Windows.Forms.Panel pnlContabilidad;
         private System.Windows.Forms.Button btnContabilidad;
 
+        // ✅ NUEVOS
+        private System.Windows.Forms.Button btnContabilidadMovimiento;
+        private System.Windows.Forms.Button btnCatalogoCuentas;
+
         private System.Windows.Forms.Button btnGrpVenta;
         private System.Windows.Forms.Panel pnlVenta;
         private System.Windows.Forms.Button btnPOS;
         private System.Windows.Forms.Button btnClientes;
-        private System.Windows.Forms.Button menuFacturacion;
-        private System.Windows.Forms.Button btnCierreCaja;
+        private System.Windows.Forms.Button btnVendedores;
+        private System.Windows.Forms.Button btnCajas;
         private System.Windows.Forms.Button btnCierresHistorico;
 
         private System.Windows.Forms.Button btnGrpCompra;
@@ -570,6 +675,10 @@ namespace Andloe.Presentacion
 
         private System.Windows.Forms.Button btnGrpConfiguracion;
         private System.Windows.Forms.Panel pnlConfiguracion;
+
+        // ✅ NUEVO
+        private System.Windows.Forms.Button btnConfiguracionContable;
+
         private System.Windows.Forms.Button btnUsuarios;
         private System.Windows.Forms.Button btnConfigSistema;
         private System.Windows.Forms.Button btnConexion;
@@ -578,8 +687,12 @@ namespace Andloe.Presentacion
 
         private System.Windows.Forms.Panel panelTop;
         private System.Windows.Forms.Label lblTitle;
-        private System.Windows.Forms.Label lblEmpresaConectada;
-
         private System.Windows.Forms.Panel panelContent;
+        private Button btnECN;
+        private Button BtnNc;
+        private Button BtnRecibo;
+        private Button BtnReporte;
+        private Button BtnConfiguracionVentas;
+        private Button BtnEtiquetasBarras;
     }
 }

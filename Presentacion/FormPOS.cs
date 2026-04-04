@@ -388,14 +388,15 @@ namespace Presentation
 
                 // Cerrar venta (esto ahora también registra promos en BD desde PosService)
                 var ventaId = _pos.CerrarVenta(
-                    usuario: _usuarioPos,
-                    clienteCodigo: clienteCodigo,
-                    medioPagoId: medioPagoId,
-                    montoRecibido: montoRecibidoBase,
-                    moneda: ConfigService.MonedaDefecto,
-                    terminoPagoId: 1,
-                    posCajaNumero: _cajaNumero
-                );
+    usuario: _usuarioPos,
+    clienteCodigo: clienteCodigo,
+    medioPagoId: medioPagoId,
+    montoRecibido: montoRecibidoBase,
+    cajaId: _cajaId,
+    moneda: ConfigService.MonedaDefecto,
+    terminoPagoId: 1,
+    posCajaNumero: _cajaNumero
+ );
 
                 // Guardar también los pagos amarrados a la caja
                 _pos.GuardarPagosPOS(

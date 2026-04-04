@@ -1,0 +1,1237 @@
+﻿using System;
+
+namespace Andloe.Logica
+{
+    public static class AuditContext
+    {
+        public static int? UsuarioId { get; private set; }
+        public static string? Usuario { get; private set; }
+
+        public static string Maquina { get; private set; } = Environment.MachineName;
+        public static string? Ip { get; private set; } = null;
+
+        public static void SetUser(int? usuarioId, string? usuario)
+        {
+            UsuarioId = usuarioId;
+            Usuario = usuario;
+        }
+
+        public static void ClearUser()
+        {
+            UsuarioId = null;
+            Usuario = null;
+        }
+
+        public static void SetIp(string? ip)
+        {
+            Ip = ip;
+        }
+    }
+}
+﻿using System;
+
+namespace Andloe.Entidad
+{
+    public class AuditoriaLog
+    {
+        public long AuditoriaId { get; set; }
+        public DateTime Fecha { get; set; }
+
+        public int? UsuarioId { get; set; }
+        public string? Usuario { get; set; }
+
+        public string Modulo { get; set; } = "";
+        public string Accion { get; set; } = "";
+
+        public string? Entidad { get; set; }
+        public string? EntidadId { get; set; }
+
+        public string? Detalle { get; set; }
+
+        public string? AntesJson { get; set; }
+        public string? DespuesJson { get; set; }
+
+        public string? Maquina { get; set; }
+        public string? Ip { get; set; }
+    }
+}
+﻿using System.Collections.Generic;
+
+namespace Andloe.Entidad
+{
+    public class AuthResult
+    {
+        public bool Exitoso { get; set; }
+        public string Mensaje { get; set; } = "";
+        public Usuario? Usuario { get; set; }
+        public List<Rol> Roles { get; set; } = new();
+    }
+}
+﻿namespace Andloe.Entidad
+{
+    public class Categoria
+    {
+        public int CategoriaId { get; set; }
+        public string Nombre { get; set; } = "";
+        public string Codigo { get; set; } = "";
+        public byte Estado { get; set; } = 1;
+    }
+}
+﻿using System;
+
+namespace Andloe.Entidad
+{
+    public class CierreCaja
+    {
+        public long CierreId { get; set; }
+
+        public int CajaId { get; set; }
+        public string POS_CajaNumero { get; set; } = string.Empty;
+
+        public DateTime FechaDesde { get; set; }
+        public DateTime FechaHasta { get; set; }
+
+        public decimal FondoInicial { get; set; }
+        public decimal TotalVentas { get; set; }
+        public decimal TotalPagos { get; set; }
+        public decimal EfectivoTeorico { get; set; }
+        public decimal EfectivoDeclarado { get; set; }
+        public decimal Diferencia { get; set; }
+
+        public string UsuarioCierre { get; set; } = string.Empty;
+        public DateTime FechaCierre { get; set; }
+        public string Estado { get; set; } = "CERRADO";
+    }
+
+    public class CierreCajaResumen
+    {
+        public decimal TotalVentas { get; set; }
+        public decimal TotalPagos { get; set; }
+        public decimal EfectivoTeorico { get; set; }
+
+
+    }
+}
+﻿// Andloe.Entidad / CierreCajaDto.cs
+namespace Andloe.Entidad
+{
+    public class CierreCajaDto
+    {
+        public int CajaId { get; set; }
+        public string CajaNumero { get; set; } = string.Empty;
+        public DateTime FechaDesde { get; set; }
+        public DateTime FechaHasta { get; set; }
+        public decimal FondoInicial { get; set; }
+        public decimal EfectivoDeclarado { get; set; }
+        public string UsuarioCierre { get; set; } = string.Empty;
+    }
+}
+﻿namespace Andloe.Entidad
+
+/// Carga los pagos asociados al cierre y los muestra en el DataGridView.
+{
+    public class CierrePagoPosDetalleDto
+    {
+        public long PagoId { get; set; }
+        public DateTime Fecha { get; set; }
+
+        public string? POS_CajaNumero { get; set; }
+
+        public string? MonedaCodigo { get; set; }
+        public decimal TasaCambio { get; set; }
+
+        public int MedioPagoId { get; set; }
+        public string? MedioPagoNombre { get; set; }
+
+        public decimal Monto { get; set; }
+
+        public string? Referencia { get; set; }
+        public string? Entidad { get; set; }
+        public string? Observacion { get; set; }
+
+        public string? Usuario { get; set; }
+    }
+}
+﻿namespace Andloe.Entidad
+{
+    public class Cliente
+    {
+        public int ClienteId { get; set; }
+        public string Codigo { get; set; } = "";
+        public string Nombre { get; set; } = "";
+        public string? RncCedula { get; set; }
+        public string? Telefono { get; set; }
+        public string? Email { get; set; }
+        public string? Direccion { get; set; }
+        public byte Tipo { get; set; } = 0;
+        public byte Estado { get; set; } = 1;
+        public System.DateTime? FechaCreacion { get; set; }
+
+        // Nuevos
+        public decimal? CreditoMaximo { get; set; }
+        public string? CodDivisas { get; set; }
+        public string? CodTerminoPagos { get; set; }
+        public string? CodVendedor { get; set; }
+        public string? CodAlmacen { get; set; }
+
+        public decimal? DescuentoPctMax { get; set; }  // ej. 5.00m
+    }
+}
+﻿namespace Andloe.Entidad
+{
+    public class ClienteDto
+    {
+        public int ClienteId { get; set; }
+        public string Codigo { get; set; } = "";
+        public string Nombre { get; set; } = "";
+        public string? CodVendedor { get; set; }
+        public string? RncCedula { get; set; }
+        public string? Direccion { get; set; }
+        public string? Telefono { get; set; }
+
+        // IMPORTANTE: byte, no string
+        public byte Tipo { get; set; }
+
+
+    }
+}
+﻿namespace Andloe.Entidad
+{
+    public class CodBarra
+    {
+        // Mapea a dbo.CodBarras
+        public string CodigoBarras { get; set; } = ""; // [Cód_ barras]
+        public string NoProducto { get; set; } = "";   // [Nº producto]
+        public int Tipo { get; set; }                  // [Tipo]
+        public string Usuario { get; set; } = "system";
+        public System.DateTime? UltimaFechaUtilizacion { get; set; }
+    }
+}
+﻿namespace Andloe.Entidad
+{
+    public class ConfigPOS
+    {
+        public string MonedaCodigo { get; set; } = "DOP";
+        public string ClienteDefectoCodigo { get; set; } = "C-000001";
+        public int? MedioPagoDefectoId { get; set; }
+    }
+}
+﻿#nullable enable
+using System;
+
+namespace Andloe.Entidad
+{
+    public sealed class ContaConfigRow
+    {
+        public int ConfigId { get; set; }
+
+        public string Modulo { get; set; } = "";
+        public string Evento { get; set; } = "";
+        public string Rol { get; set; } = "";
+
+        public string Naturaleza { get; set; } = "DEBITO"; // DEBITO / CREDITO
+        public int Orden { get; set; } = 1;
+
+        public int? CuentaId { get; set; }
+        public string? CuentaCodigo { get; set; }
+        public string? CuentaNombre { get; set; }
+
+        public bool Activo { get; set; } = true;
+        public DateTime FechaCreacion { get; set; }
+    }
+
+    public sealed class CuentaLookupRow
+    {
+        public int CuentaId { get; set; }
+        public string Codigo { get; set; } = "";
+        public string Nombre { get; set; } = "";
+        public string Display => $"{Codigo} - {Nombre}";
+    }
+}
+#nullable restore
+using System;
+using System.Collections.Generic;
+
+namespace Andloe.Entidad.CxC
+{
+    public sealed class CxCCobroListadoDto
+    {
+        public long CobroId { get; set; }
+        public string NoRecibo { get; set; } = "";
+        public string ClienteNombre { get; set; } = "";
+        public string Detalles { get; set; } = "";
+        public DateTime Fecha { get; set; }
+        public string CuentaMostrar { get; set; } = "";
+        public string Estado { get; set; } = "";
+        public decimal Monto { get; set; }
+    }
+
+    public sealed class CxCFacturaPendienteDto
+    {
+        public int FacturaId { get; set; }
+        public string NumeroDocumento { get; set; } = "";
+        public string? ENcf { get; set; }
+        public DateTime FechaDocumento { get; set; }
+        public DateTime? FechaVencimiento { get; set; }
+        public decimal TotalFactura { get; set; }
+        public decimal TotalCobrado { get; set; }
+        public decimal BalancePendiente { get; set; }
+        public decimal Retencion { get; set; }
+        public decimal MontoRecibido { get; set; }
+    }
+
+    public sealed class CxCCuentaDestinoDto
+    {
+        public string TipoCuenta { get; set; } = "BANCO"; // BANCO / CAJA
+        public int CuentaId { get; set; }
+        public string NombreMostrar { get; set; } = "";
+        public string MonedaCodigo { get; set; } = "DOP";
+    }
+
+    public sealed class CxCCentroCostoDto
+    {
+        public int CentroCostoId { get; set; }
+        public string Codigo { get; set; } = "";
+        public string Nombre { get; set; } = "";
+        public override string ToString() => string.IsNullOrWhiteSpace(Codigo) ? Nombre : $"{Codigo} - {Nombre}";
+    }
+
+    public sealed class CxCClienteLookupDto
+    {
+        public int ClienteId { get; set; }
+        public string Codigo { get; set; } = "";
+        public string Nombre { get; set; } = "";
+        public string? Documento { get; set; }
+        public override string ToString() => string.IsNullOrWhiteSpace(Codigo) ? Nombre : $"{Codigo} - {Nombre}";
+    }
+
+    public sealed class CxCCobroAplicacionDto
+    {
+        public int FacturaId { get; set; }
+        public decimal MontoAplicado { get; set; }
+        public decimal Retencion { get; set; }
+        public string? Nota { get; set; }
+    }
+
+    public sealed class CxCCobroCrearDto
+    {
+        public int EmpresaId { get; set; }
+        public int? SucursalId { get; set; }
+        public int? ClienteId { get; set; }
+        public string? ClienteCodigo { get; set; }
+        public string ClienteNombre { get; set; } = "";
+        public string? ClienteDoc { get; set; }
+        public DateTime Fecha { get; set; } = DateTime.Today;
+        public string MonedaCodigo { get; set; } = "DOP";
+        public decimal TasaCambio { get; set; } = 1m;
+        public string TipoMedio { get; set; } = "EFECTIVO";
+        public decimal MontoMedio { get; set; }
+        public int? BancoId { get; set; }
+        public int? CuentaBancoId { get; set; }
+        public string? Referencia { get; set; }
+        public string? Observacion { get; set; }
+        public int? CentroCostoId { get; set; }
+        public string? TipoIngreso { get; set; }
+        public bool Postear { get; set; } = true;
+        public List<CxCCobroAplicacionDto> Aplicaciones { get; set; } = new();
+        public string? NumeroCheque { get; set; }
+    }
+
+    public sealed class CxCCobroCrearResultDto
+    {
+        public long CobroId { get; set; }
+        public string NoRecibo { get; set; } = "";
+        public string Estado { get; set; } = "";
+    }
+}
+﻿using System;
+
+namespace Andloe.Entidad.CxC
+{
+    public sealed class CxCEstadoCuentaDto
+    {
+        public int ClienteId { get; set; }
+        public DateTime Fecha { get; set; }
+        public string TipoMovimiento { get; set; } = "";
+        public string Documento { get; set; } = "";
+        public string? Referencia { get; set; }
+        public decimal Debe { get; set; }
+        public decimal Haber { get; set; }
+        public decimal Monto { get; set; }
+        public DateTime FechaVencimiento { get; set; }
+        public long OrigenId { get; set; }
+        public string? Descripcion { get; set; }
+
+        public decimal BalanceAcumulado { get; set; }
+        public int DiasVencidos { get; set; }
+    }
+}﻿namespace Andloe.Entidad
+{
+    public sealed class ECFDocumentoDto
+    {
+        public long ECFDocumentoId { get; set; }
+        public long FacturaId { get; set; }
+        public int TipoECF { get; set; }
+        public string ENCF { get; set; } = "";
+        public string EstadoDGII { get; set; } = "PENDIENTE";
+        public string? TrackId { get; set; }
+
+        public string? XmlSinFirmar { get; set; }
+        public string? XmlFirmado { get; set; }
+
+        public string? RespuestaDGII { get; set; }
+
+        public System.DateTime FechaGenerado { get; set; }
+        public System.DateTime? FechaFirmado { get; set; }
+        public System.DateTime? FechaEnviado { get; set; }
+
+        public int IntentosEnvio { get; set; }
+        public string? UltimoError { get; set; }
+    }
+}﻿using System;
+
+namespace Andloe.Entidad
+{
+    public sealed class ECFDocumentoListItemDto
+    {
+        public long ECFDocumentoId { get; set; }
+        public int FacturaId { get; set; }
+        public int TipoECF { get; set; }
+        public string ENCF { get; set; } = "";
+        public string EstadoDGII { get; set; } = "";
+        public string? TrackId { get; set; }
+        public DateTime FechaGenerado { get; set; }
+        public int IntentosEnvio { get; set; }
+        public string? UltimoError { get; set; }
+
+        public string? NumeroDocumento { get; set; }
+        public string? Cliente { get; set; }
+        public decimal? TotalGeneral { get; set; }
+    }
+}﻿using System;
+using System.Collections.Generic;
+
+namespace Andloe.Entidad.Facturacion
+{
+    public class FacturaCabDto
+    {
+        public int FacturaId { get; set; }
+        public string TipoDocumento { get; set; } = "";
+        public string? NumeroDocumento { get; set; }
+        public DateTime FechaDocumento { get; set; }
+        public DateTime? FechaVencimiento { get; set; }
+
+        public string? DireccionCliente { get; set; }
+
+        public int? ClienteId { get; set; }
+        public string NombreCliente { get; set; } = "";
+        public string? DocumentoCliente { get; set; }
+
+        // 🔥 NUEVO: vendedor asignado a la factura (Código)
+        public string? CodVendedor { get; set; }
+
+        public decimal SubTotal { get; set; }
+        public decimal TotalDescuento { get; set; }
+        public decimal TotalImpuesto { get; set; }
+        public decimal TotalGeneral { get; set; }
+
+        public string TipoPago { get; set; } = "";
+        public int? TerminoPagoId { get; set; }
+        public int? DiasCredito { get; set; }
+
+        public string Estado { get; set; } = "";
+        public string? Observacion { get; set; }
+        public string? ENCF { get; set; }
+        public string? TrackId { get; set; }
+        public string? CodigoSeguridad { get; set; }
+    }
+
+    public class FacturaDetDto
+    {
+        public int FacturaDetId { get; set; }
+        public int FacturaId { get; set; }
+        public string? ProductoCodigo { get; set; }
+        public string? CodBarra { get; set; }
+        public string Descripcion { get; set; } = "";
+        public string Unidad { get; set; } = "";
+        public decimal Cantidad { get; set; }
+        public decimal Precio { get; set; }
+        public decimal ItbisPct { get; set; }
+        public decimal ItbisMonto { get; set; }
+        public decimal TotalLinea { get; set; }
+        public int? ImpuestoId { get; set; }
+
+        public decimal DescuentoPct { get; set; }
+        public decimal DescuentoMonto { get; set; }
+    }
+
+    public class FacturaHistorialDto
+    {
+        public int FacturaId { get; set; }
+        public string TipoDocumento { get; set; } = "";
+        public string? NumeroDocumento { get; set; }
+        public DateTime FechaDocumento { get; set; }
+        public DateTime? FechaVencimiento { get; set; }
+        public string Estado { get; set; } = "";
+        public string TipoPago { get; set; } = "";
+        public string NombreCliente { get; set; } = "";
+        public string? DocumentoCliente { get; set; }
+        public decimal SubTotal { get; set; }
+        public decimal TotalImpuesto { get; set; }
+        public decimal TotalGeneral { get; set; }
+    }
+
+    public class FacturaCompletaDto
+    {
+        public FacturaCabDto Cab { get; set; } = new FacturaCabDto();
+        public List<FacturaDetDto> Det { get; set; } = new List<FacturaDetDto>();
+    }
+}
+﻿namespace Andloe.Entidad
+{
+    public class FondoCaja
+    {
+        public long FondoId { get; set; }
+        public int CajaId { get; set; }
+        public string POS_CajaNumero { get; set; } = string.Empty;
+
+        public DateTime FechaApertura { get; set; }
+        public string UsuarioApertura { get; set; } = string.Empty;
+
+        public decimal MontoFondo { get; set; }
+        public string? Observacion { get; set; }
+
+        public string Estado { get; set; } = "ABIERTO"; // ABIERTO / CERRADO
+
+        public long? CierreId { get; set; }
+        public DateTime? FechaCierre { get; set; }
+    }
+}
+﻿namespace Andloe.Entidad
+{
+    public class Impuesto
+    {
+        public int ImpuestoId { get; set; }
+        public string Codigo { get; set; } = "";
+        public string Nombre { get; set; } = "";
+        public decimal Porcentaje { get; set; }
+        public bool Estado { get; set; }
+    }
+}
+﻿namespace Andloe.Entidad
+{
+    public class InvMovimientoCab
+    {
+        public long InvMovId { get; set; }
+        public DateTime Fecha { get; set; }
+        public string Tipo { get; set; } = "";       // 'ENTRADA','SALIDA','AJUSTE','TRANSFERENCIA', etc.
+        public string? Origen { get; set; }          // 'VENTA','AJUSTE','COMPRA', etc.
+        public long? OrigenId { get; set; }
+        public int? AlmacenIdOrigen { get; set; }
+        public int? AlmacenIdDestino { get; set; }
+        public string Usuario { get; set; } = "";
+        public string? Observacion { get; set; }
+        public string Estado { get; set; } = "";     // 'APLICADO','PENDIENTE', etc.
+    }
+
+    public class InvMovimientoLin
+    {
+        public long InvMovId { get; set; }
+        public int Linea { get; set; }
+        public string ProductoCodigo { get; set; } = "";
+        public decimal Cantidad { get; set; }        // 18,4
+        public decimal CostoUnitario { get; set; }   // 18,6
+
+        public string? Usuario { get; set; }
+
+        public DateTime? FechaCreacion { get; set; }
+        public string? UsuarioCreacion { get; set; }
+        public DateTime? FechaModificacion { get; set; }
+        public string? UsuarioModificacion { get; set; }
+    }
+}
+﻿namespace Andloe.Entidad
+{
+    public class ItemCarrito
+    {
+        public string ProductoCodigo { get; set; } = "";
+        public string Descripcion { get; set; } = "";
+        public decimal Cantidad { get; set; }
+        public decimal PrecioUnit { get; set; }
+        public decimal ItbisPct { get; set; }
+
+
+
+        // =====================================
+        //  NUEVOS CAMPOS PARA DESCUENTOS
+        // =====================================
+
+        // *** NUEVO DESCUENTO
+        public decimal DescuentoPct { get; set; } = 0m;
+
+        // *** NUEVO DESCUENTO
+        public decimal DescuentoMonto { get; set; } = 0m;
+
+        // =====================================
+        //  CAMPOS CALCULADOS
+        // =====================================
+
+        // *** NUEVO DESCUENTO
+        public decimal SubtotalBruto =>
+            Cantidad * PrecioUnit;
+
+        // *** NUEVO DESCUENTO
+        public decimal SubtotalNeto =>
+            SubtotalBruto - DescuentoMonto;
+
+        public decimal ItbisMonto =>
+            Math.Round(SubtotalNeto * (ItbisPct / 100m), 2);
+
+        public decimal Total =>
+            Math.Round(SubtotalNeto + ItbisMonto, 2);
+
+        // Compatibilidad con lo existente:
+        public decimal Importe =>
+            SubtotalNeto; // Igual que antes, pero ahora con descuento aplicado
+    }
+}
+﻿using System;
+
+namespace Andloe.Entidad
+{
+    public class ItemMovimientoDto
+    {
+        public string ProductoCodigo { get; set; } = "";
+        public string Descripcion { get; set; } = "";
+        public decimal Cantidad { get; set; }
+        public decimal CostoUnitario { get; set; }
+
+        public decimal Importe => Math.Round(Cantidad * CostoUnitario, 2);
+    }
+}
+﻿using System;
+
+namespace Andloe.Entidad
+{
+    /// <summary>
+    /// Línea de Kardex (movimiento de inventario) para un producto.
+    /// </summary>
+    public class KardexItemDto
+    {
+        public DateTime Fecha { get; set; }
+
+        /// <summary>
+        /// Tipo de movimiento en cabecera: ENTRADA, SALIDA, TRASLADO.
+        /// </summary>
+        public string Tipo { get; set; } = "";
+
+        /// <summary>
+        /// Texto de origen: COMPRA, VENTA, AJUSTE, etc.
+        /// </summary>
+        public string Origen { get; set; } = "";
+
+        public long? OrigenId { get; set; }
+
+        public int? AlmacenOrigenId { get; set; }
+        public int? AlmacenDestinoId { get; set; }
+
+        /// <summary>
+        /// Cantidad que entra por esta línea (si aplica).
+        /// </summary>
+        public decimal Entrada { get; set; }
+
+        /// <summary>
+        /// Cantidad que sale por esta línea (si aplica).
+        /// </summary>
+        public decimal Salida { get; set; }
+
+        /// <summary>
+        /// Existencia acumulada del producto después de aplicar esta línea.
+        /// </summary>
+        public decimal Existencia { get; set; }
+
+        /// <summary>
+        /// Costo unitario asociado a la línea (para valorización rápida).
+        /// </summary>
+        public decimal CostoUnitario { get; set; }
+
+        /// <summary>
+        /// Costo total = (Entrada - Salida) * CostoUnitario,
+        /// normalmente CostoUnitario * CantidadMovimiento en valor absoluto.
+        /// </summary>
+        public decimal CostoTotal { get; set; }
+
+        public string Usuario { get; set; } = "";
+        public string Observacion { get; set; } = "";
+    }
+}
+﻿namespace Andloe.Entidad
+{
+    public class KardexLineaDto
+    {
+        public DateTime Fecha { get; set; }
+        public string Tipo { get; set; } = "";
+        public string? Origen { get; set; }
+        public long? OrigenId { get; set; }
+        public string ProductoCodigo { get; set; } = "";
+        public decimal CantidadEntrada { get; set; }
+        public decimal CantidadSalida { get; set; }
+        public decimal Saldo { get; set; }        // saldo acumulado calculado
+        public string Usuario { get; set; } = "";
+        public string? Observacion { get; set; }
+    }
+}
+﻿using System;
+
+namespace Andloe.Entidad
+{
+    public class KardexMovimientoDto
+    {
+        public DateTime Fecha { get; set; }
+        public string Tipo { get; set; } = "";
+        public string Origen { get; set; } = "";
+        public string NumeroDocumento { get; set; } = "";
+        public string Almacen { get; set; } = "";
+        public decimal Entrada { get; set; }
+        public decimal Salida { get; set; }
+        public decimal Existencia { get; set; }
+    }
+}
+﻿using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Text;
+using System.Threading.Tasks;
+
+namespace Andloe.Entidad
+{
+    public class MedioPagoDto
+    {
+        public int MedioPagoId { get; set; }
+        public string Nombre { get; set; } = "";
+    }
+}
+
+﻿namespace Andloe.Entidad
+{
+    public class MonedaDto
+    {
+        public string Codigo { get; set; } = "";
+        public string Descripcion { get; set; } = "";
+    }
+}
+using System;
+using System.Collections.Generic;
+
+namespace Andloe.Entidad
+{
+    public sealed class NotaCreditoVentaCabDto
+    {
+        public long NCId { get; set; }
+        public string NoDocumento { get; set; } = "";
+        public DateTime Fecha { get; set; } = DateTime.Now;
+        public long? VentaIdOrigen { get; set; }
+        public int EmpresaId { get; set; }
+        public int SucursalId { get; set; }
+        public int AlmacenId { get; set; }
+        public string ClienteCodigo { get; set; } = "";
+        public string ClienteNombre { get; set; } = "";
+        public string? DocumentoCliente { get; set; }
+        public string MonedaCodigo { get; set; } = "DOP";
+        public decimal TasaCambio { get; set; } = 1m;
+        public decimal SubTotalMoneda { get; set; }
+        public decimal ItbisMoneda { get; set; }
+        public decimal TotalMoneda { get; set; }
+        public string Estado { get; set; } = "EMITIDA";
+        public string? Usuario { get; set; }
+        public string? Motivo { get; set; }
+        public string? ENCF { get; set; }
+        public string? ENcfOrigen { get; set; }
+        public string? NoDocumentoOrigen { get; set; }
+    }
+
+    public sealed class NotaCreditoVentaLinDto
+    {
+        public bool Seleccionado { get; set; } = true;
+        public int Linea { get; set; }
+        public string ProductoCodigo { get; set; } = "";
+        public string Descripcion { get; set; } = "";
+        public decimal CantidadOriginal { get; set; }
+        public decimal CantidadNC { get; set; }
+        public decimal PrecioUnit { get; set; }
+        public decimal ItbisPct { get; set; }
+        public decimal DescuentoMoneda { get; set; }
+        public decimal SubTotalMoneda { get; set; }
+        public decimal ItbisMoneda { get; set; }
+        public decimal TotalMoneda { get; set; }
+        public decimal SubTotalNcCalculado { get; set; }
+        public decimal ItbisNcCalculado { get; set; }
+        public decimal TotalNcCalculado { get; set; }
+    }
+
+    public sealed class NotaCreditoVentaDto
+    {
+        public NotaCreditoVentaCabDto Cab { get; set; } = new();
+        public List<NotaCreditoVentaLinDto> Lineas { get; set; } = new();
+    }
+
+    public sealed class VentaOrigenDto
+    {
+        public long VentaId { get; set; }
+        public string NoDocumento { get; set; } = "";
+        public DateTime Fecha { get; set; }
+        public string ClienteCodigo { get; set; } = "";
+        public string ClienteNombre { get; set; } = "";
+        public string? DocumentoCliente { get; set; }
+        public string MonedaCodigo { get; set; } = "DOP";
+        public decimal TasaCambio { get; set; } = 1m;
+        public decimal TotalMoneda { get; set; }
+        public string Estado { get; set; } = "";
+    }
+
+    public sealed class NcfTipoDto
+    {
+        public int TipoId { get; set; }
+        public string Codigo { get; set; } = "";
+        public string Descripcion { get; set; } = "";
+        public override string ToString() => string.IsNullOrWhiteSpace(Descripcion) ? Codigo : $"{Codigo} - {Descripcion}";
+    }
+}
+﻿using Andloe.Entidad;
+using System;
+using System.Collections.Generic;
+using System.Linq;
+
+namespace Andloe.Entidad
+{
+    public class PagoLineaResult
+    {
+        public int MedioPagoId { get; set; }
+        public string NombreMedio { get; set; } = string.Empty;
+
+        public string MonedaCodigo { get; set; } = "DOP";
+        public decimal TasaCambio { get; set; } = 1m;
+
+        /// <summary>Monto en la moneda seleccionada (USD, EUR, DOP, etc.).</summary>
+        public decimal MontoMoneda { get; set; }
+
+        /// <summary>Monto convertido a moneda base (DOP) = MontoMoneda * TasaCambio.</summary>
+        public decimal MontoBase => Math.Round(MontoMoneda * TasaCambio, 2);
+    }
+
+    public class SeleccionPagoResult
+    {
+        /// <summary>Total a cobrar en moneda base (DOP).</summary>
+        public decimal TotalBase { get; set; }
+
+        /// <summary>Lista de líneas de pago (efectivo, tarjeta, etc.).</summary>
+        public List<PagoLineaResult> Pagos { get; } = new();
+
+        /// <summary>Suma de todos los pagos en base (DOP).</summary>
+        public decimal PagadoBase => Math.Round(Pagos.Sum(p => p.MontoBase), 2);
+
+        /// <summary>Diferencia = TotalBase - PagadoBase. Positivo = falta por cobrar; negativo = cambio.</summary>
+        public decimal DiferenciaBase => Math.Round(TotalBase - PagadoBase, 2);
+
+        public bool IncluidoEnCierre { get; set; }
+    }
+}
+namespace Entidad
+{
+    public class PagoPOS
+    {
+        public DateTime Fecha { get; set; }
+        public string? MonedaCodigo { get; set; }
+        public decimal TasaCambio { get; set; }
+        public decimal Monto { get; set; }
+        public int MedioPagoId { get; set; }
+        public string? Referencia { get; set; }
+        public string? Entidad { get; set; }
+        public string? Observacion { get; set; }
+        public string? Usuario { get; set; }
+        public int? CajaId { get; set; }
+        public int VentaId { get; set; }
+        public string Estado { get; set; } = "APLICADO";
+
+        public string? POS_CajaNumero { get; set; }
+    }
+}﻿using System;
+
+namespace Andloe.Entidad
+{
+    public class Producto
+    {
+        public int ProductoId { get; set; }
+
+        // Compatibilidad con sistema actual
+        public string Codigo { get; set; } = string.Empty;
+        public string CodReferencia { get; set; } = string.Empty;
+        public string Referencia { get; set; } = string.Empty;
+        public string Descripcion { get; set; } = string.Empty;
+        public string UnidadBase { get; set; } = string.Empty;
+
+        // Legacy 0/1
+        public int Estado { get; set; } = 1;
+
+        public decimal PrecioVenta { get; set; }
+        public decimal PrecioCoste { get; set; }
+        public decimal PrecioMayor { get; set; }
+        public decimal PorcFijoBeneficio { get; set; }
+        public decimal PrecioCompraPromedio { get; set; }
+        public decimal UltimoPrecioCompra { get; set; }
+        public decimal StockActual { get; set; }
+        public decimal DescuentoPctMax { get; set; }
+
+        public int? CategoriaId { get; set; }
+        public int? SubcategoriaId { get; set; }
+        public int? ImpuestoId { get; set; }
+
+        public DateTime? FechaCreacion { get; set; }
+
+        // e-CF
+        public string DescripcionFiscal { get; set; } = string.Empty;
+        public bool PrecioIncluyeITBIS { get; set; }
+        public string CodigoItemFiscal { get; set; } = string.Empty;
+        public int TipoProducto { get; set; } = 1;
+        public int? UnidadMedidaECFId { get; set; }
+        public string UnidadMedidaCodigo { get; set; } = string.Empty;
+        public string UnidadMedidaDGII { get; set; } = string.Empty;
+        public bool EsExento { get; set; }
+
+        public void NormalizeDefaults()
+        {
+            Codigo = (Codigo ?? string.Empty).Trim();
+            CodReferencia = (CodReferencia ?? string.Empty).Trim();
+            Referencia = (Referencia ?? string.Empty).Trim();
+            Descripcion = (Descripcion ?? string.Empty).Trim();
+            UnidadBase = (UnidadBase ?? string.Empty).Trim();
+            DescripcionFiscal = string.IsNullOrWhiteSpace(DescripcionFiscal)
+                ? Descripcion
+                : DescripcionFiscal.Trim();
+            CodigoItemFiscal = (CodigoItemFiscal ?? string.Empty).Trim();
+            UnidadMedidaCodigo = (UnidadMedidaCodigo ?? string.Empty).Trim();
+            UnidadMedidaDGII = (UnidadMedidaDGII ?? string.Empty).Trim();
+
+            if (Estado != 0 && Estado != 1)
+                Estado = 1;
+
+            if (TipoProducto <= 0)
+                TipoProducto = 1;
+
+            if (EsExento)
+                ImpuestoId = null;
+        }
+
+        public void Validate()
+        {
+            if (string.IsNullOrWhiteSpace(Codigo))
+                throw new InvalidOperationException("El código del producto es obligatorio.");
+
+            if (string.IsNullOrWhiteSpace(Descripcion))
+                throw new InvalidOperationException("La descripción del producto es obligatoria.");
+
+            if (string.IsNullOrWhiteSpace(DescripcionFiscal))
+                throw new InvalidOperationException("La descripción fiscal del producto es obligatoria.");
+
+            if (!EsExento && !ImpuestoId.HasValue)
+                throw new InvalidOperationException("Debe indicar un impuesto o marcar el producto como exento.");
+        }
+    }
+}﻿// Lista para mostrar productos con precio de venta e ITBIS
+namespace Andloe.Entidad
+{
+    public class ProductoListaDto
+    {
+        public string Codigo { get; set; } = "";
+        public string Descripcion { get; set; } = "";
+        public decimal PrecioVenta { get; set; }
+        public decimal ItbisPct { get; set; }
+    }
+}
+﻿public sealed class PromoLogDto
+{
+    public int PromoId { get; set; }
+
+    public string Origen { get; set; } = "VENTA"; // VENTA|DEVOLUCION|AJUSTE...
+    public long OrigenId { get; set; }            // ej: VentaId
+
+    public int? Linea { get; set; }               // opcional: #linea o VentaDetId
+
+    public decimal MontoDesc { get; set; }        // (18,2)
+    public string? MonedaCodigo { get; set; }     // (3)
+    public decimal? TasaCambio { get; set; }      // (18,6)
+
+    public string? Usuario { get; set; }          // (50)
+    public DateTime FechaAplic { get; set; } = DateTime.Now;
+    public DateTime Fecha { get; set; } = DateTime.Now; // si no hay default en DB
+}
+
+public sealed class PromoTopeDeltaDto
+{
+    public int PromoId { get; set; }
+
+    public string PeriodoTipo { get; set; } = "DIARIO"; // GENERAL|DIARIO|MENSUAL
+    public string PeriodoClave { get; set; } = DateTime.Now.ToString("yyyyMMdd");
+
+    public string? ClienteCodigo { get; set; }          // null = global
+    public string? ProductoCodigo { get; set; }         // null = global
+
+    public int UsosDelta { get; set; } = 1;
+    public decimal MontoDelta { get; set; }
+
+    public DateTime UltimaFecha { get; set; } = DateTime.Now;
+}
+﻿namespace Andloe.Entidad
+{
+    public class Proveedor
+    {
+        public string Codigo { get; set; } = "";
+        public string Nombre { get; set; } = "";
+        public string? Rnc { get; set; }
+        public string? Telefono { get; set; }
+        public string? Email { get; set; }
+        public string? Direccion { get; set; }
+        public byte Estado { get; set; } = 1;
+        public System.DateTime? FechaCreacion { get; set; }
+
+        // Nuevos
+        public decimal? CreditoMaximo { get; set; }
+        public string? CodDivisas { get; set; }
+        public string? CodTerminoPagos { get; set; }
+        public string? CodVendedor { get; set; }
+        public string? CodAlmacen { get; set; }
+    }
+}
+﻿namespace Andloe.Entidad
+{
+    public sealed class ReporteDefDto
+    {
+        public int ReporteId { get; set; }
+        public string Modulo { get; set; } = "";
+        public string Actividad { get; set; } = "";
+        public string Codigo { get; set; } = "";
+        public string Nombre { get; set; } = "";
+        public string Motor { get; set; } = "";
+        public string RutaArchivo { get; set; } = "";
+
+        public int Orden { get; set; }
+    }
+}
+﻿namespace Andloe.Entidad
+{
+    public class Rol
+    {
+        public int RolId { get; set; }
+        public string Nombre { get; set; } = "";
+    }
+}
+﻿using System;
+
+namespace Andloe.Entidad
+{
+    public class SesionActual
+    {
+        public int UsuarioId { get; set; }
+        public string Usuario { get; set; } = "";
+
+        public int EmpresaId { get; set; }
+        public int SucursalId { get; set; }
+        public int AlmacenId { get; set; }
+
+        // No está en UsuarioContexto en tu BD -> se maneja en memoria
+        public int? CajaId { get; set; }
+
+        public bool EstaCompletaBase()
+            => UsuarioId > 0 && EmpresaId > 0 && SucursalId > 0 && AlmacenId > 0;
+
+        public void ValidarCompletaBase()
+        {
+            if (!EstaCompletaBase())
+                throw new InvalidOperationException("Sesión incompleta: falta Empresa/Sucursal/Almacén o UsuarioId.");
+        }
+    }
+}
+﻿using System;
+
+namespace Andloe.Entidad
+{
+   
+    public class SistemaConfig
+    {
+        public string Clave { get; set; } = string.Empty;
+        public string? Valor { get; set; }
+        public string? Descripcion { get; set; }
+        public string? Tipo { get; set; }
+        public DateTime? FechaMod { get; set; }
+        public string? UsuarioMod { get; set; }
+    }
+}
+﻿namespace Andloe.Entidad
+{
+    public class Subcategoria
+    {
+        public int SubcategoriaId { get; set; }
+        public int CategoriaId { get; set; }
+        public string Nombre { get; set; } = "";
+        public string Codigo { get; set; } = "";
+        public byte Estado { get; set; } = 1;
+    }
+}
+﻿// Proyecto: Andloe.Entidad
+namespace Andloe.Entidad
+{
+    public class TerminoPago
+    {
+        public int TerminoPagoId { get; set; }
+        public string Codigo { get; set; } = string.Empty;        // NET30, CONTADO, etc.
+        public string Descripcion { get; set; } = string.Empty;   // Pago a 30 días
+        public int DiasPlazo { get; set; }                        // 0, 15, 30...
+
+        // ✅ NUEVO: cuotas (si DiasPlazo = 0 y CantCuotas > 0)
+        public int? CantCuotas { get; set; }                      // 3, 6, 12...
+        public int? FrecuenciaDias { get; set; }                  // 7, 15, 30...
+
+        public bool TieneDescuento { get; set; }
+        public decimal? PorcDescuento { get; set; }
+        public int? DiasDescuento { get; set; }
+
+        public bool Estado { get; set; } = true;
+
+        public DateTime FechaCreacion { get; set; }
+        public DateTime? FechaActualizacion { get; set; }
+        public string? Usuario { get; set; }
+    }
+}
+﻿namespace Andloe.Entidad
+{
+    public class Usuario
+    {
+        public int UsuarioId { get; set; }
+        public string UsuarioNombre { get; set; } = "";
+        public string Email { get; set; } = "";
+        public string Estado { get; set; } = "Activo";
+        public DateTime? UltimoAcceso { get; set; }
+
+        // Para login seguro:
+        public int IntentosFallidos { get; set; }          // NUEVO
+        public DateTime? BloqueadoHasta { get; set; }      // NUEVO
+
+        public byte[] HashPassword { get; set; } = Array.Empty<byte>();
+        public byte[] Salt { get; set; } = Array.Empty<byte>();
+    }
+}
+﻿#nullable enable
+namespace Andloe.Entidad
+{
+    public class UsuarioContextoDto
+    {
+        public int UsuarioId { get; set; }
+        public int EmpresaId { get; set; }
+        public int SucursalId { get; set; }
+        public int AlmacenId { get; set; }
+    }
+}
+#nullable restore
+namespace Andloe.Entidad
+{
+    public class Vendedor
+    {
+        public int VendedorId { get; set; }
+        public string Codigo { get; set; } = "";
+        public string Nombre { get; set; } = "";
+        public string? Email { get; set; }
+        public string? Telefono { get; set; }
+        public bool Estado { get; set; } = true;
+    }
+}
+﻿namespace Andloe.Entidad
+{
+    public class Venta
+    {
+        public long VentaId { get; set; }
+        public string NoDocumento { get; set; } = string.Empty;
+        public DateTime Fecha { get; set; }
+
+        public string? ClienteCodigo { get; set; }
+        public int? ClienteId { get; set; }
+
+        public string? NombreCliente { get; set; }
+        public string? EmailCliente { get; set; }
+        public string? TelefonoCliente { get; set; }
+
+        public string MonedaCodigo { get; set; } = "DOP";
+        public decimal TasaCambio { get; set; }
+
+        public decimal Subtotal { get; set; }
+        public decimal DescuentoTotal { get; set; }
+        public decimal ImpuestoTotal { get; set; }
+        public decimal Total { get; set; }
+
+        public string? Estado { get; set; }
+        public string? Usuario { get; set; }
+        public string? Observacion { get; set; }
+
+        public DateTime FechaCreacion { get; set; }
+
+        public int? MedioPagoId { get; set; }
+        public decimal MontoPago { get; set; }
+        public decimal MontoCambio { get; set; }
+
+        public decimal SubTotalMoneda { get; set; }
+        public decimal ItbisMoneda { get; set; }
+        public decimal TotalMoneda { get; set; }
+
+        // 🔹 Campo POS para la caja
+        public string? POS_CajaNumero { get; set; }
+
+        public int TerminoPagoId { get; set; } = 1;
+
+        public bool IncluidaEnCierre { get; set; }
+    }
+}
+﻿namespace Andloe.Entidad
+{
+    public class VentaLinea
+    {
+        public long VentaId { get; set; }
+        public int Linea { get; set; }
+        public string ProductoCodigo { get; set; } = "";
+        public string? Descripcion { get; set; }
+        public decimal Cantidad { get; set; }
+        public decimal PrecioUnit { get; set; }
+        public decimal ItbisPct { get; set; }
+        public decimal ItbisMonto { get; set; }
+        public decimal Importe { get; set; }
+        public decimal TotalLinea { get; set; }
+
+        public decimal DescuentoPct { get; set; }      // % aplicado
+        public decimal DescuentoMonto { get; set; }    // monto rebajado
+    }
+}
+﻿using System;
+
+namespace Andloe.Entidad
+{
+    public sealed class VentasPorVendedorRowDto
+    {
+        public string CodVendedor { get; set; } = "";
+        public string Vendedor { get; set; } = "";
+        public int CantFacturas { get; set; }
+        public decimal SubTotal { get; set; }
+        public decimal Descuento { get; set; }
+        public decimal Itbis { get; set; }
+        public decimal TotalGeneral { get; set; }
+    }
+
+    public sealed class VentasPorVendedorDetalleDto
+    {
+        public int FacturaId { get; set; }
+        public string NumeroDocumento { get; set; } = "";
+        public DateTime FechaDocumento { get; set; }
+        public string CodVendedor { get; set; } = "";
+        public string Vendedor { get; set; } = "";
+        public string Cliente { get; set; } = "";
+        public decimal TotalGeneral { get; set; }
+        public string Estado { get; set; } = "";
+    }
+}

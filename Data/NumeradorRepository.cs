@@ -5,9 +5,9 @@ using Microsoft.Data.SqlClient;
 namespace Andloe.Data
 {
     /// <summary>
-    /// Genera numeraciones usando:
-    /// - dbo.Numerador (config/master)
-    /// - dbo.NumeradorSecuencia (contador runtime)
+    /// Numeración oficial en tu BD:
+    /// - dbo.NumeradorSecuencia (Codigo, Prefijo, Longitud, Actual)
+    /// - dbo.sp_Numerador_Siguiente
     /// </summary>
     public sealed class NumeradorRepository
     {
@@ -19,88 +19,31 @@ namespace Andloe.Data
             codigo = codigo.Trim().ToUpperInvariant();
             prefijoFallback ??= "";
             if (lenFallback <= 0) lenFallback = 6;
+            if (lenFallback > 20) lenFallback = 20;
 
             using var cn = Db.GetOpenConnection();
-            using var tx = cn.BeginTransaction(IsolationLevel.Serializable);
 
-            try
+            using var cmd = new SqlCommand("dbo.sp_Numerador_Siguiente", cn);
+            cmd.CommandType = CommandType.StoredProcedure;
+
+            cmd.Parameters.Add("@Codigo", SqlDbType.VarChar, 20).Value = codigo;
+            cmd.Parameters.Add("@Prefijo", SqlDbType.VarChar, 10).Value = prefijoFallback;
+            cmd.Parameters.Add("@Longitud", SqlDbType.Int).Value = lenFallback;
+
+            var pOut = new SqlParameter("@Siguiente", SqlDbType.VarChar, 30)
             {
-                // 1) Leer config desde dbo.Numerador (si existe)
-                string prefCfg = prefijoFallback;
-                int lenCfg = lenFallback;
+                Direction = ParameterDirection.Output
+            };
+            cmd.Parameters.Add(pOut);
 
-                using (var cmd = new SqlCommand(@"
-SELECT TOP(1) Prefijo, Longitud
-FROM dbo.Numerador WITH (NOLOCK)
-WHERE Codigo = @cod;", cn, tx))
-                {
-                    cmd.Parameters.Add("@cod", SqlDbType.VarChar, 20).Value = codigo;
-                    using var rd = cmd.ExecuteReader();
-                    if (rd.Read())
-                    {
-                        if (!rd.IsDBNull(0)) prefCfg = rd.GetString(0) ?? prefijoFallback;
-                        if (!rd.IsDBNull(1)) lenCfg = rd.GetInt32(1);
-                    }
-                }
+            cmd.ExecuteNonQuery();
 
-                if (lenCfg <= 0) lenCfg = lenFallback;
-                if (lenCfg > 20) lenCfg = 20;
+            var siguiente = pOut.Value == DBNull.Value ? null : Convert.ToString(pOut.Value);
 
-                // 2) Crear fila runtime si no existe, tomando prefijo/longitud del master (o fallback)
-                using (var cmd = new SqlCommand(@"
-IF NOT EXISTS (SELECT 1 FROM dbo.NumeradorSecuencia WITH (UPDLOCK, HOLDLOCK) WHERE Codigo=@cod)
-BEGIN
-    INSERT INTO dbo.NumeradorSecuencia(Codigo, Prefijo, Longitud, Actual)
-    VALUES (@cod, @pref, @len, 0);
-END
-ELSE
-BEGIN
-    -- si cambiaste el master, puedes sincronizar prefijo/longitud aquí (opcional)
-    UPDATE dbo.NumeradorSecuencia
-    SET Prefijo=@pref, Longitud=@len
-    WHERE Codigo=@cod;
-END
-", cn, tx))
-                {
-                    cmd.Parameters.Add("@cod", SqlDbType.VarChar, 20).Value = codigo;
-                    cmd.Parameters.Add("@pref", SqlDbType.VarChar, 10).Value = prefCfg ?? "";
-                    cmd.Parameters.Add("@len", SqlDbType.Int).Value = lenCfg;
-                    cmd.ExecuteNonQuery();
-                }
+            if (string.IsNullOrWhiteSpace(siguiente))
+                throw new InvalidOperationException($"No se pudo generar numerador para '{codigo}' (SP devolvió vacío).");
 
-                // 3) Incrementar y devolver
-                string prefijo;
-                int longitud;
-                int actual;
-
-                using (var cmd = new SqlCommand(@"
-UPDATE dbo.NumeradorSecuencia
-SET Actual = Actual + 1
-OUTPUT INSERTED.Prefijo, INSERTED.Longitud, INSERTED.Actual
-WHERE Codigo = @cod;
-", cn, tx))
-                {
-                    cmd.Parameters.Add("@cod", SqlDbType.VarChar, 20).Value = codigo;
-
-                    using var rd = cmd.ExecuteReader();
-                    if (!rd.Read())
-                        throw new InvalidOperationException($"No se pudo generar numerador para '{codigo}'.");
-
-                    prefijo = rd.IsDBNull(0) ? "" : rd.GetString(0);
-                    longitud = rd.IsDBNull(1) ? lenCfg : rd.GetInt32(1);
-                    actual = rd.IsDBNull(2) ? 0 : rd.GetInt32(2);
-                }
-
-                tx.Commit();
-
-                var numero = actual.ToString().PadLeft(longitud <= 0 ? lenCfg : longitud, '0');
-                return (prefijo ?? "") + numero;
-            }
-            catch
-            {
-                tx.Rollback();
-                throw;
-            }
+            return siguiente!;
         }
     }
 }

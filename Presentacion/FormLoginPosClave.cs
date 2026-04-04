@@ -1,7 +1,10 @@
 ﻿using Andloe.Data;
 using Andloe.Entidad;
 using System;
+using System.ComponentModel;
+using System.Drawing;
 using System.Windows.Forms;
+using Guna.UI2.WinForms;
 
 namespace Presentation
 {
@@ -23,27 +26,46 @@ namespace Presentation
             InitializeComponent();
         }
 
+        // ✅ Detecta modo diseñador (para que no intente cargar BD en el diseñador)
+        private static bool EsModoDisenio()
+        {
+            return LicenseManager.UsageMode == LicenseUsageMode.Designtime;
+        }
+
         private void FormLoginPosClave_Load(object sender, EventArgs e)
         {
+            // ✅ CLAVE: si estás en el diseñador, NO ejecutes repositorios/BD
+            if (EsModoDisenio())
+                return;
+
             try
             {
+                // ✅ Estilo del teclado (redondeado)
+                ConfigurarTecladoNumerico();
+
                 lblUsuarioValor.Text = "";   // aún no sabemos cuál es, depende del PIN
 
                 var cajas = _cajaRepo.ListarActivas();
-                if (cajas.Count == 0)
+                if (cajas == null || cajas.Count == 0)
                 {
                     MessageBox.Show("No hay cajas activas configuradas en la base de datos.",
                         "POS", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+
+                    // Evita que el combo quede con datasource inválido
+                    cbCaja.DataSource = null;
+                    cbCaja.Items.Clear();
+                }
+                else
+                {
+                    cbCaja.DisplayMember = "Display";  // propiedad de CajaDto
+                    cbCaja.ValueMember = "CajaId";
+                    cbCaja.DataSource = cajas;
+
+                    cbCaja.SelectedIndex = 0;
                 }
 
-                cbCaja.DisplayMember = "Display";  // propiedad de CajaDto
-                cbCaja.ValueMember = "CajaId";
-                cbCaja.DataSource = cajas;
-
-                if (cajas.Count > 0)
-                    cbCaja.SelectedIndex = 0;
-
                 txtClave.Clear();
+                txtClave.Focus();
             }
             catch (Exception ex)
             {
@@ -53,9 +75,57 @@ namespace Presentation
         }
 
         // ========================
+        //  ESTILO TECLADO NUMÉRICO
+        // ========================
+        private void ConfigurarTecladoNumerico()
+        {
+            // 🔧 Ajusta redondez aquí:
+            // 12-14 = suave, 16-18 = más circular, 20+ = casi pastilla
+            const int radius = 16;
+
+            // Si alguno no existe o no es Guna2Button, aquí te daría error.
+            // Eso significa que en el Designer aún está como Button.
+            Guna2Button[] botones =
+            {
+                btn1, btn2, btn3,
+                btn4, btn5, btn6,
+                btn7, btn8, btn9,
+                btnClear, btn0, btnBackspace
+            };
+
+            foreach (var b in botones)
+            {
+                if (b == null) continue;
+
+                // Bordes redondeados
+                b.AutoRoundedCorners = false;
+                b.BorderRadius = radius;
+
+                // Look
+                b.Animated = true;
+                b.BorderThickness = 0;
+
+                // Texto
+                b.TextAlign = HorizontalAlignment.Center;
+                b.Font = new Font("Segoe UI", 12.5f, FontStyle.Bold);
+
+                // opcional: evita focus feo con Tab
+                b.TabStop = false;
+            }
+
+            // Textos exactos como el keypad
+            btnClear.Text = "C / Todo";
+            btn0.Text = "0";
+            btnBackspace.Text = "← Borrar";
+
+            // Acciones un poco más pequeñas para que no se corten
+            btnClear.Font = new Font("Segoe UI", 9.5f, FontStyle.Bold);
+            btnBackspace.Font = new Font("Segoe UI", 9.5f, FontStyle.Bold);
+        }
+
+        // ========================
         //   TECLADO NUMÉRICO
         // ========================
-
         private const int MAX_LONGITUD_PIN = 6;
 
         private void AgregarDigito(string digito)
@@ -64,6 +134,8 @@ namespace Presentation
                 return;
 
             txtClave.Text += digito;
+            txtClave.SelectionStart = txtClave.Text.Length;
+            txtClave.Focus();
         }
 
         private void btn0_Click(object sender, EventArgs e) => AgregarDigito("0");
@@ -96,7 +168,6 @@ namespace Presentation
         // ========================
         //   VALIDAR LOGIN POS
         // ========================
-
         private void btnAceptar_Click(object sender, EventArgs e)
         {
             // 1) Validar selección de caja
@@ -187,12 +258,8 @@ namespace Presentation
                             // Si cancela, no entra al POS
                             return;
                         }
-
-                        // Si quieres usar el monto:
-                        // var montoFondo = frmFondo.MontoFondoRegistrado;
                     }
                 }
-                // Si ya hay fondo, simplemente continúa al POS.
 
                 // 8) Notificar acceso correcto al POS
                 OnAccesoCorrecto?.Invoke(
@@ -214,6 +281,10 @@ namespace Presentation
         {
             DialogResult = DialogResult.Cancel;
             Close();
+        }
+
+        private void lblCaja_Click(object sender, EventArgs e)
+        {
         }
     }
 }

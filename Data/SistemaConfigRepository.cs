@@ -104,4 +104,7 @@ WHEN NOT MATCHED THEN
             SetValor(clave, valor, descripcion: null, tipo: "FLAG", usuario: usuario);
         }
     }
+
+
+
 }

@@ -10,22 +10,18 @@ namespace Andloe.Entidad.Facturacion
         public string? NumeroDocumento { get; set; }
         public DateTime FechaDocumento { get; set; }
         public DateTime? FechaVencimiento { get; set; }
-
         public string? DireccionCliente { get; set; }
-
         public int? ClienteId { get; set; }
         public string NombreCliente { get; set; } = "";
         public string? DocumentoCliente { get; set; }
-
+        public string? CodVendedor { get; set; }
         public decimal SubTotal { get; set; }
         public decimal TotalDescuento { get; set; }
         public decimal TotalImpuesto { get; set; }
         public decimal TotalGeneral { get; set; }
-
         public string TipoPago { get; set; } = "";
         public int? TerminoPagoId { get; set; }
         public int? DiasCredito { get; set; }
-
         public string Estado { get; set; } = "";
         public string? Observacion { get; set; }
         public string? ENCF { get; set; }
@@ -47,7 +43,6 @@ namespace Andloe.Entidad.Facturacion
         public decimal ItbisMonto { get; set; }
         public decimal TotalLinea { get; set; }
         public int? ImpuestoId { get; set; }
-
         public decimal DescuentoPct { get; set; }
         public decimal DescuentoMonto { get; set; }
     }

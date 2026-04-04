@@ -44,7 +44,7 @@ namespace Andloe.Presentacion
                     // OJO: Listar() trae básico; si StockActual / PrecioCoste no vienen,
                     // el grid mostrará 0.00 hasta que los incluyas en el SELECT de Listar().
                     var existencia = p.StockActual;                 // decimal (si viene)
-                    var precioCoste = p.PrecioCoste ?? 0m;          // nullable decimal
+                    var precioCoste = p.PrecioCoste;          // nullable decimal
 
                     grid.Rows.Add(new object[]
                     {

@@ -1,18 +1,17 @@
-﻿#nullable enable
-using Andloe.Logica;
-using Andloe.Data; // ✅ nuevo
-using Presentation;
-using Andloe.Presentacion;
-using System;
-using System.Collections.Generic;
+﻿using System;
 using System.Drawing;
 using System.Linq;
 using System.Windows.Forms;
+using Andloe.Logica;
+using Presentation;
+using Andloe.Presentacion;
 
 namespace Andloe.Presentacion
 {
     public partial class FormPrincipal : Form
     {
+        public static FormPrincipal? Instancia { get; private set; }
+
         private readonly string _usuario;
         private readonly string[] _roles;
         private readonly AuthorizationService _auth;
@@ -27,20 +26,10 @@ namespace Andloe.Presentacion
         private static readonly Color ColMuted = Color.FromArgb(170, 175, 190);
         private static readonly Color ColContent = Color.White;
 
-        // ✅ repos para nombres
-        private readonly EmpresaRepository _empresaRepo = new();
-        private readonly SucursalRepository _sucursalRepo = new();
-        private readonly AlmacenRepository _almacenRepo = new();
-        private readonly CajaRepository _cajaRepo = new();
-
-        // ✅ cache simple para evitar golpear DB cada click
-        private readonly Dictionary<int, string> _empresaCache = new();
-        private readonly Dictionary<int, string> _sucursalCache = new();
-        private readonly Dictionary<int, string> _almacenCache = new();
-        private readonly Dictionary<int, string> _cajaCache = new();
-
         public FormPrincipal(string usuario, string[] roles)
         {
+            Instancia = this;
+
             _usuario = usuario;
             _roles = roles ?? Array.Empty<string>();
             _auth = new AuthorizationService(_roles);
@@ -51,11 +40,16 @@ namespace Andloe.Presentacion
 
             lblTitle.Text = $"Bienvenido, {_usuario}";
 
-            // ✅ Mostrar empresa/sucursal/almacén conectado (NOMBRES)
-            UpdateEmpresaConectadaLabel();
-
             btnGrpDashboard.PerformClick();
             btnDashboard.PerformClick();
+        }
+
+        protected override void OnFormClosed(FormClosedEventArgs e)
+        {
+            if (ReferenceEquals(Instancia, this))
+                Instancia = null;
+
+            base.OnFormClosed(e);
         }
 
         private void ApplyTheme()
@@ -65,11 +59,6 @@ namespace Andloe.Presentacion
             panelContent.BackColor = ColContent;
 
             lblBrand.ForeColor = ColText;
-
-            lblTitle.ForeColor = ColText;
-
-            // ✅ label de contexto
-            lblEmpresaConectada.ForeColor = ColMuted;
 
             foreach (var b in panelSidebar.Controls.OfType<Button>())
             {
@@ -97,6 +86,8 @@ namespace Andloe.Presentacion
                 }
             }
 
+            lblTitle.ForeColor = ColText;
+
             MinimumSize = new Size(1100, 700);
             DoubleBuffered = true;
         }
@@ -111,7 +102,8 @@ namespace Andloe.Presentacion
 
         private void ActivateButton(Button btn)
         {
-            if (_activeButton == btn) return;
+            if (_activeButton == btn)
+                return;
 
             if (_activeButton != null)
                 _activeButton.BackColor = ColSidebar;
@@ -120,120 +112,48 @@ namespace Andloe.Presentacion
             _activeButton.BackColor = ColSidebarActive;
         }
 
-        /// <summary>Abre un Form dentro de panelContent (NO MDI)</summary>
-        private void OpenChild(Form child)
+        public void OpenChild(Form child)
         {
             try
             {
+                panelContent.SuspendLayout();
+
                 if (_activeForm != null)
                 {
-                    panelContent.Controls.Remove(_activeForm);
-
                     _activeForm.Close();
                     _activeForm.Dispose();
                     _activeForm = null;
                 }
 
-                _activeForm = child;
+                panelContent.Controls.Clear();
 
+                _activeForm = child;
                 child.TopLevel = false;
                 child.FormBorderStyle = FormBorderStyle.None;
                 child.Dock = DockStyle.Fill;
 
-                panelContent.Controls.Clear();
                 panelContent.Controls.Add(child);
+                panelContent.Tag = child;
 
                 child.Show();
                 child.BringToFront();
 
-                lblTitle.Text = child.Text;
-
-                // ✅ refresca por si cambió el contexto
-                UpdateEmpresaConectadaLabel();
+                lblTitle.Text = string.IsNullOrWhiteSpace(child.Text) ? "ERP" : child.Text;
             }
             catch (Exception ex)
             {
-                MessageBox.Show(ex.Message, "OpenChild", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                MessageBox.Show(
+                    ex.Message,
+                    "Error al abrir formulario",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Error);
             }
-        }
-
-        // ================== CONTEXTO (NOMBRES) ==================
-        private string GetEmpresaNombre(int empresaId)
-        {
-            if (empresaId <= 0) return "(sin empresa)";
-            if (_empresaCache.TryGetValue(empresaId, out var n)) return n;
-
-            var nombre = _empresaRepo.ObtenerRazonSocial(empresaId);
-            n = string.IsNullOrWhiteSpace(nombre) ? $"Empresa {empresaId}" : nombre.Trim();
-            _empresaCache[empresaId] = n;
-            return n;
-        }
-
-        private string GetSucursalNombre(int sucursalId)
-        {
-            if (sucursalId <= 0) return "(sin sucursal)";
-            if (_sucursalCache.TryGetValue(sucursalId, out var n)) return n;
-
-            var nombre = _sucursalRepo.ObtenerNombre(sucursalId);
-            n = string.IsNullOrWhiteSpace(nombre) ? $"Sucursal {sucursalId}" : nombre.Trim();
-            _sucursalCache[sucursalId] = n;
-            return n;
-        }
-
-        private string GetAlmacenNombre(int almacenId)
-        {
-            if (almacenId <= 0) return "(sin almacén)";
-            if (_almacenCache.TryGetValue(almacenId, out var n)) return n;
-
-            var nombre = _almacenRepo.ObtenerNombre(almacenId);
-            n = string.IsNullOrWhiteSpace(nombre) ? $"Almacén {almacenId}" : nombre.Trim();
-            _almacenCache[almacenId] = n;
-            return n;
-        }
-
-        private string? GetCajaNumero(int cajaId)
-        {
-            if (cajaId <= 0) return null;
-            if (_cajaCache.TryGetValue(cajaId, out var n)) return n;
-
-            var numero = _cajaRepo.ObtenerCajaNumero(cajaId);
-            n = string.IsNullOrWhiteSpace(numero) ? $"Caja {cajaId}" : numero.Trim();
-            _cajaCache[cajaId] = n;
-            return n;
-        }
-
-        private void UpdateEmpresaConectadaLabel()
-        {
-            try
+            finally
             {
-                var s = SesionService.TryGet();
-                if (s == null)
-                {
-                    lblEmpresaConectada.Text = "Empresa: (sin sesión)";
-                    return;
-                }
-
-                var emp = GetEmpresaNombre(s.EmpresaId);
-                var suc = GetSucursalNombre(s.SucursalId);
-                var alm = GetAlmacenNombre(s.AlmacenId);
-
-                var cajaTxt = "";
-                if (s.CajaId.HasValue)
-                {
-                    var caja = GetCajaNumero(s.CajaId.Value);
-                    if (!string.IsNullOrWhiteSpace(caja))
-                        cajaTxt = $" | Caja: {caja}";
-                }
-
-                lblEmpresaConectada.Text = $"Empresa: {emp} | Sucursal: {suc} | Almacén: {alm}{cajaTxt}";
-            }
-            catch
-            {
-                lblEmpresaConectada.Text = "Empresa: (no disponible)";
+                panelContent.ResumeLayout();
             }
         }
 
-        // ===================== COLLAPSE GROUPS =====================
         private void CollapseAllGroups()
         {
             pnlDashboard.Visible = false;
@@ -257,29 +177,30 @@ namespace Andloe.Presentacion
                 panelSidebar.ScrollControlIntoView(groupPanel);
         }
 
-        private void btnGrpDashboard_Click(object? sender, EventArgs e) => ToggleGroup(pnlDashboard);
-        private void btnGrpContabilidad_Click(object? sender, EventArgs e) => ToggleGroup(pnlContabilidad);
-        private void btnGrpVenta_Click(object? sender, EventArgs e) => ToggleGroup(pnlVenta);
-        private void btnGrpCompra_Click(object? sender, EventArgs e) => ToggleGroup(pnlCompra);
-        private void btnGrpProducto_Click(object? sender, EventArgs e) => ToggleGroup(pnlProducto);
-        private void btnGrpInventario_Click(object? sender, EventArgs e) => ToggleGroup(pnlInventario);
-        private void btnGrpNomina_Click(object? sender, EventArgs e) => ToggleGroup(pnlNomina);
-        private void btnGrpConfiguracion_Click(object? sender, EventArgs e) => ToggleGroup(pnlConfiguracion);
+        private void btnGrpDashboard_Click(object sender, EventArgs e) => ToggleGroup(pnlDashboard);
+        private void btnGrpContabilidad_Click(object sender, EventArgs e) => ToggleGroup(pnlContabilidad);
+        private void btnGrpVenta_Click(object sender, EventArgs e) => ToggleGroup(pnlVenta);
+        private void btnGrpCompra_Click(object sender, EventArgs e) => ToggleGroup(pnlCompra);
+        private void btnGrpProducto_Click(object sender, EventArgs e) => ToggleGroup(pnlProducto);
+        private void btnGrpInventario_Click(object sender, EventArgs e) => ToggleGroup(pnlInventario);
+        private void btnGrpNomina_Click(object sender, EventArgs e) => ToggleGroup(pnlNomina);
+        private void btnGrpConfiguracion_Click(object sender, EventArgs e) => ToggleGroup(pnlConfiguracion);
 
-        private void btnDashboard_Click(object? sender, EventArgs e)
+        private void btnDashboard_Click(object sender, EventArgs e)
         {
             ActivateButton(btnDashboard);
             OpenChild(new FormDashboard());
         }
 
-        private void btnPOS_Click(object? sender, EventArgs e)
+        private void btnPOS_Click(object sender, EventArgs e)
         {
             ActivateButton(btnPOS);
 
             using (var frmLogin = new FormLoginPosClave())
             {
                 var drLogin = frmLogin.ShowDialog(this);
-                if (drLogin != DialogResult.OK) return;
+                if (drLogin != DialogResult.OK)
+                    return;
 
                 var cajaId = frmLogin.CajaIdSeleccionada;
                 var cajaNumero = frmLogin.CajaNumeroSeleccionada;
@@ -287,20 +208,19 @@ namespace Andloe.Presentacion
 
                 if (cajaId <= 0 || string.IsNullOrWhiteSpace(cajaNumero))
                 {
-                    MessageBox.Show("No se obtuvo información válida de caja desde el login.",
-                        "POS", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    MessageBox.Show(
+                        "No se obtuvo información válida de caja desde el login.",
+                        "POS",
+                        MessageBoxButtons.OK,
+                        MessageBoxIcon.Error);
                     return;
                 }
-
-                // ✅ guarda caja en sesión y refresca label
-              
-              SesionService.SetCaja(cajaId);
-                UpdateEmpresaConectadaLabel();
 
                 using (var frmFondo = new FormFondoCaja(cajaId, cajaNumero, usuario))
                 {
                     var drFondo = frmFondo.ShowDialog(this);
-                    if (drFondo != DialogResult.OK) return;
+                    if (drFondo != DialogResult.OK)
+                        return;
                 }
 
                 bool puedeCerrarCaja =
@@ -314,87 +234,151 @@ namespace Andloe.Presentacion
             }
         }
 
-        private void btnConfigSistema_Click(object? sender, EventArgs e)
-        {
-            ActivateButton(btnConfigSistema);
-            OpenChild(new FormConfiguracion());
-        }
-
-        private void btnClientes_Click(object? sender, EventArgs e)
+        private void btnClientes_Click(object sender, EventArgs e)
         {
             ActivateButton(btnClientes);
             OpenChild(new FormClientes());
         }
 
-        private void menuFacturacion_Click(object? sender, EventArgs e)
+        private void btnVendedores_Click(object sender, EventArgs e)
         {
+            ActivateButton(btnVendedores);
+            OpenChild(new FormVendedores());
+        }
+
+        private void btnCajas_Click(object sender, EventArgs e)
+        {
+            ActivateButton(btnCajas);
             OpenChild(new FormFacturaHistorial());
         }
 
-        private void btnCierresHistorico_Click(object? sender, EventArgs e)
+        private void btnCierresHistorico_Click(object sender, EventArgs e)
         {
             ActivateButton(btnCierresHistorico);
             OpenChild(new FormCierresHistorico());
         }
 
-        private void btnProductos_Click(object? sender, EventArgs e)
+        private void btnProductos_Click(object sender, EventArgs e)
         {
             ActivateButton(btnProductos);
             OpenChild(new FormProductos());
         }
 
-        private void btnPromosProducto_Click(object? sender, EventArgs e)
+        private void btnPromosProducto_Click(object sender, EventArgs e)
         {
             ActivateButton(btnPromosProducto);
             OpenChild(new FormPromoHistorico(_usuario));
         }
 
-        private void btnKardex_Click(object? sender, EventArgs e)
+        private void btnKardex_Click(object sender, EventArgs e)
         {
             ActivateButton(btnKardex);
             OpenChild(new FormKardex());
         }
 
-        private void btnInvMov_Click(object? sender, EventArgs e)
+        private void btnInvMov_Click(object sender, EventArgs e)
         {
             using (var frm = new Presentation.FormInvMovimiento(_usuario))
                 frm.ShowDialog(this);
         }
 
-        private void btnUsuarios_Click(object? sender, EventArgs e)
+        private void btnUsuarios_Click(object sender, EventArgs e)
         {
             ActivateButton(btnUsuarios);
             OpenChild(new FormUsuarios(_auth));
         }
 
-        private void btnConexion_Click(object? sender, EventArgs e)
+        private void btnConfigSistema_Click(object sender, EventArgs e)
+        {
+            ActivateButton(btnConfigSistema);
+            OpenChild(new FormConfiguracion());
+        }
+
+        private void btnConexion_Click(object sender, EventArgs e)
         {
             ActivateButton(btnConexion);
             OpenChild(new FormConexion());
         }
 
-        private void btnContabilidad_Click(object? sender, EventArgs e)
+        private void btnContabilidadMovimiento_Click(object sender, EventArgs e)
+        {
+            ActivateButton(btnContabilidadMovimiento);
+            OpenChild(new FormContabilidadMovimiento());
+        }
+
+        private void btnCatalogoCuentas_Click(object sender, EventArgs e)
+        {
+            ActivateButton(btnCatalogoCuentas);
+            OpenChild(new FormCatalogoCuentas());
+        }
+
+        private void btnConfiguracionContable_Click(object sender, EventArgs e)
+        {
+            ActivateButton(btnConfiguracionContable);
+            OpenChild(new FormConfiguracionContable());
+        }
+
+        private void btnContabilidad_Click(object sender, EventArgs e)
         {
             ActivateButton(btnContabilidad);
-            MessageBox.Show("Módulo Contabilidad pendiente de implementación.", "ERP",
-                MessageBoxButtons.OK, MessageBoxIcon.Information);
+            MessageBox.Show(
+                "Módulo Contabilidad pendiente de implementación.",
+                "ERP",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Information);
         }
 
-        private void btnCompra_Click(object? sender, EventArgs e)
+        private void btnCompra_Click(object sender, EventArgs e)
         {
             ActivateButton(btnCompra);
-            MessageBox.Show("Módulo Compra pendiente de implementación.", "ERP",
-                MessageBoxButtons.OK, MessageBoxIcon.Information);
+            MessageBox.Show(
+                "Módulo Compra pendiente de implementación.",
+                "ERP",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Information);
         }
 
-        private void btnNomina_Click(object? sender, EventArgs e)
+        private void btnNomina_Click(object sender, EventArgs e)
         {
             ActivateButton(btnNomina);
-            MessageBox.Show("Módulo Nómina pendiente de implementación.", "ERP",
-                MessageBoxButtons.OK, MessageBoxIcon.Information);
+            MessageBox.Show(
+                "Módulo Nómina pendiente de implementación.",
+                "ERP",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Information);
         }
 
-        private void btnSalir_Click(object? sender, EventArgs e) => Close();
+        private void btnECN_Click(object sender, EventArgs e)
+        {
+            ActivateButton(btnConfigSistema);
+            OpenChild(new FormMonitorECF());
+        }
+
+           private void BtnNc_Click(object sender, EventArgs e)
+        {
+            ActivateButton(BtnNc);
+
+            int usuarioId = 1;
+            string usuarioNombre = _usuario;
+
+            OpenChild(new FormNotaCreditoVentaECF(usuarioId, usuarioNombre, null));
+        }
+
+        private void BtnRecibo_Click(object sender, EventArgs e)
+        {
+            ActivateButton(BtnRecibo);
+            OpenChild(new FormCxCCobros());
+        }
+
+        private void BtnReporte_Click(object sender, EventArgs e)
+        {
+            ActivateButton(BtnReporte);
+            OpenChild(new FormCxCReportes());
+        }
+
+        private void btnSalir_Click(object sender, EventArgs e)
+        {
+            Close();
+        }
     }
 }
-#nullable restore

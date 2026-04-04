@@ -5,8 +5,11 @@ using System.Windows.Forms;
 using Microsoft.Data.SqlClient;
 using Andloe.Data;
 using Andloe.Logica;
+using Andloe.Presentacion;
 
-namespace Andloe.Presentacion
+
+namespace Presentacion
+
 {
     public partial class FormLogin : Form
     {
@@ -22,7 +25,7 @@ namespace Andloe.Presentacion
             txtPassword.KeyDown += OnEnterKey;
 
             btnEntrar.Click += (_, __) => DoLogin();
-            btnCancelar.Click += (_, __) => Close();
+        
 
             chkMostrar.CheckedChanged += (_, __) =>
             {
@@ -154,6 +157,26 @@ ORDER BY RazonSocial;", cn);
             {
                 lblMsg.Text = ex.Message;
             }
+        }
+
+        private void chkMostrar_CheckedChanged(object sender, EventArgs e)
+        {
+
+        }
+
+        private void panel_Paint(object sender, PaintEventArgs e)
+        {
+
+        }
+
+        private void FormLogin_Load_1(object sender, EventArgs e)
+        {
+
+        }
+
+        private void pictureBox3_Click(object sender, EventArgs e)
+        {
+
         }
     }
 }

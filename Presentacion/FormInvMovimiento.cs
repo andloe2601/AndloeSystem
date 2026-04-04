@@ -143,7 +143,9 @@ namespace Presentation
                 txtExistencia.Text = stock.ToString("N2");
 
                 // COSTO desde producto
-                var costo = p.PrecioCoste ?? p.PrecioCompraPromedio ?? 0m;
+                var costo = p.PrecioCoste;
+                if (costo <= 0m) costo = p.PrecioCompraPromedio;
+                if (costo <= 0m) costo = 0m;
                 txtCosto.Text = costo.ToString("N2");
 
                 numCantidad.Value = 1;
@@ -223,7 +225,9 @@ namespace Presentation
                     return;
                 }
 
-                var costo = p.PrecioCoste ?? p.PrecioCompraPromedio ?? 0m;
+                var costo = p.PrecioCoste;
+                if (costo <= 0m) costo = p.PrecioCompraPromedio;
+                if (costo <= 0m) costo = 0m;
                 var desc = GetDescripcionProducto(p);
 
                 // Si ya existe en líneas, sumamos

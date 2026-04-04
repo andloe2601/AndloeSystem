@@ -1,20 +1,27 @@
-﻿using System.Windows.Forms;
+using System.ComponentModel;
+using System.Drawing;
+using System.Windows.Forms;
+
+using WinCheckBox = System.Windows.Forms.CheckBox;
+using WinColor = System.Drawing.Color;
 
 namespace Andloe.Presentacion
 {
     partial class FormProductoEdit
     {
-        private System.ComponentModel.IContainer components = null;
+        private IContainer components = null;
 
         private TextBox txtCodigo;
         private TextBox txtDescripcion;
+        private TextBox txtDescripcionFiscal;
         private TextBox txtReferencia;
-        private Button btnFinalizar;
+        private TextBox txtCodigoItemFiscal;
 
         private ComboBox cboUnidad;
         private ComboBox cboImpuesto;
         private ComboBox cboCategoria;
         private ComboBox cboSubcategoria;
+        private ComboBox cboTipoProducto;
 
         private TextBox txtPrecioVenta;
         private TextBox txtPrecioCosto;
@@ -24,15 +31,18 @@ namespace Andloe.Presentacion
         private TextBox txtUltimoPrecioCompra;
         private TextBox txtPorcBeneficio;
 
-        private CheckBox chkActivo;
+        private WinCheckBox chkActivo;
+        private WinCheckBox chkBloqNegativo;
+        private WinCheckBox chkPrecioIncluyeITBIS;
 
-        // ✅ NUEVO
-        private CheckBox chkBloqNegativo;
+        private PictureBox picImagenProducto;
+        private Button btnCargarImagen;
+        private Button btnQuitarImagen;
 
         private Button btnAtras;
         private Button btnSiguiente;
         private Button btnGuardar;
-        private Button btnCerrar;
+        private Button btnFinalizar;
 
         private DataGridView gridBarras;
         private TextBox txtBarraManual;
@@ -45,234 +55,400 @@ namespace Andloe.Presentacion
         private DataGridViewTextBoxColumn colBarraUsuario;
         private DataGridViewTextBoxColumn colBarraUltUso;
 
+        private TableLayoutPanel root;
+        private TableLayoutPanel tlMain;
+        private GroupBox grpGeneral;
+        private GroupBox grpFiscal;
+        private GroupBox grpPrecios;
+        private GroupBox grpInventario;
+        private GroupBox grpImagen;
+        private GroupBox grpBarras;
+        private TableLayoutPanel tlGeneral;
+        private TableLayoutPanel tlFiscal;
+        private TableLayoutPanel tlPrecios;
+        private TableLayoutPanel tlInventario;
+        private TableLayoutPanel tlImagen;
+        private TableLayoutPanel tlBarras;
+        private FlowLayoutPanel flChecks;
+        private FlowLayoutPanel flImagenButtons;
+        private FlowLayoutPanel flBarrasTop;
+        private FlowLayoutPanel flBottom;
+        private Panel panelTop;
+        private Panel panelBottom;
+
         protected override void Dispose(bool disposing)
         {
-            if (disposing && (components != null)) components.Dispose();
+            if (disposing && (components != null))
+                components.Dispose();
+
             base.Dispose(disposing);
         }
 
-        // ✅ helper clásico (NO local function) para que el diseñador no se rompa
-        private static Label MakeLabel(string text)
+        private Label MakeLabel(string text)
         {
-            var l = new Label();
-            l.Text = text;
-            l.Dock = DockStyle.Fill;
-            l.TextAlign = System.Drawing.ContentAlignment.MiddleLeft;
-            return l;
+            return new Label
+            {
+                Text = text,
+                AutoSize = true,
+                Dock = DockStyle.Fill,
+                TextAlign = ContentAlignment.MiddleLeft,
+                Margin = new Padding(3, 6, 3, 6)
+            };
         }
 
         private void InitializeComponent()
         {
-            components = new System.ComponentModel.Container();
+            components = new Container();
 
-            // =========================
-            // ROOT
-            // =========================
-            var root = new TableLayoutPanel();
+            root = new TableLayoutPanel();
+            panelTop = new Panel();
+            tlMain = new TableLayoutPanel();
+
+            grpGeneral = new GroupBox();
+            grpFiscal = new GroupBox();
+            grpPrecios = new GroupBox();
+            grpInventario = new GroupBox();
+            grpImagen = new GroupBox();
+            grpBarras = new GroupBox();
+
+            tlGeneral = new TableLayoutPanel();
+            tlFiscal = new TableLayoutPanel();
+            tlPrecios = new TableLayoutPanel();
+            tlInventario = new TableLayoutPanel();
+            tlImagen = new TableLayoutPanel();
+            tlBarras = new TableLayoutPanel();
+
+            flChecks = new FlowLayoutPanel();
+            flImagenButtons = new FlowLayoutPanel();
+            flBarrasTop = new FlowLayoutPanel();
+            flBottom = new FlowLayoutPanel();
+            panelBottom = new Panel();
+
+            txtCodigo = new TextBox();
+            txtDescripcion = new TextBox();
+            txtDescripcionFiscal = new TextBox();
+            txtReferencia = new TextBox();
+            txtCodigoItemFiscal = new TextBox();
+
+            cboUnidad = new ComboBox();
+            cboImpuesto = new ComboBox();
+            cboCategoria = new ComboBox();
+            cboSubcategoria = new ComboBox();
+            cboTipoProducto = new ComboBox();
+
+            txtPrecioVenta = new TextBox();
+            txtPrecioCosto = new TextBox();
+            txtPrecioMayor = new TextBox();
+
+            txtExistencia = new TextBox();
+            txtUltimoPrecioCompra = new TextBox();
+            txtPorcBeneficio = new TextBox();
+
+            chkActivo = new WinCheckBox();
+            chkBloqNegativo = new WinCheckBox();
+            chkPrecioIncluyeITBIS = new WinCheckBox();
+
+            picImagenProducto = new PictureBox();
+            btnCargarImagen = new Button();
+            btnQuitarImagen = new Button();
+
+            btnAtras = new Button();
+            btnSiguiente = new Button();
+            btnGuardar = new Button();
+            btnFinalizar = new Button();
+
+            gridBarras = new DataGridView();
+            txtBarraManual = new TextBox();
+            btnAgregarBarraManual = new Button();
+            btnAgregarBarraAuto = new Button();
+            btnEliminarBarra = new Button();
+
+            colBarraCodigo = new DataGridViewTextBoxColumn();
+            colBarraTipo = new DataGridViewTextBoxColumn();
+            colBarraUsuario = new DataGridViewTextBoxColumn();
+            colBarraUltUso = new DataGridViewTextBoxColumn();
+
+            ((ISupportInitialize)(picImagenProducto)).BeginInit();
+            ((ISupportInitialize)(gridBarras)).BeginInit();
+            SuspendLayout();
+
+            // root
+            root.ColumnCount = 1;
+            root.RowCount = 2;
             root.Dock = DockStyle.Fill;
             root.Padding = new Padding(12);
-            root.ColumnCount = 1;
-            root.RowCount = 3;
-            root.RowStyles.Add(new RowStyle(SizeType.Absolute, 270));
-            root.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-            root.RowStyles.Add(new RowStyle(SizeType.Absolute, 56));
+            root.BackColor = WinColor.FromArgb(245, 246, 248);
+            root.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
+            root.RowStyles.Add(new RowStyle(SizeType.Absolute, 68F));
+            root.Controls.Add(panelTop, 0, 0);
+            root.Controls.Add(panelBottom, 0, 1);
 
-            // =========================
-            // TOP CARD (FICHA)
-            // =========================
-            var card = new Panel { Dock = DockStyle.Fill };
+            // panelTop
+            panelTop.Dock = DockStyle.Fill;
+            panelTop.Controls.Add(tlMain);
 
-            var grid = new TableLayoutPanel
-            {
-                Dock = DockStyle.Fill,
-                ColumnCount = 6,
-                RowCount = 6,
-                Padding = new Padding(8)
-            };
+            // tlMain
+            tlMain.ColumnCount = 3;
+            tlMain.RowCount = 3;
+            tlMain.Dock = DockStyle.Fill;
+            tlMain.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 42F));
+            tlMain.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 33F));
+            tlMain.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 25F));
+            tlMain.RowStyles.Add(new RowStyle(SizeType.Absolute, 320F));
+            tlMain.RowStyles.Add(new RowStyle(SizeType.Absolute, 235F));
+            tlMain.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
+            tlMain.Controls.Add(grpGeneral, 0, 0);
+            tlMain.Controls.Add(grpFiscal, 1, 0);
+            tlMain.Controls.Add(grpImagen, 2, 0);
+            tlMain.Controls.Add(grpPrecios, 0, 1);
+            tlMain.Controls.Add(grpInventario, 1, 1);
+            tlMain.Controls.Add(flChecks, 2, 1);
+            tlMain.Controls.Add(grpBarras, 0, 2);
+            tlMain.SetColumnSpan(grpBarras, 3);
 
-            // ✅ SIN for (para que abra el diseñador)
-            grid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 16.666F));
-            grid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 16.666F));
-            grid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 16.666F));
-            grid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 16.666F));
-            grid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 16.666F));
-            grid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 16.666F));
+            // grpGeneral
+            grpGeneral.Text = "Datos generales";
+            grpGeneral.Dock = DockStyle.Fill;
+            grpGeneral.Padding = new Padding(12);
+            grpGeneral.Controls.Add(tlGeneral);
 
-            // 6 filas
-            grid.RowStyles.Add(new RowStyle(SizeType.Absolute, 30)); // 0
-            grid.RowStyles.Add(new RowStyle(SizeType.Absolute, 30)); // 1
-            grid.RowStyles.Add(new RowStyle(SizeType.Absolute, 30)); // 2
-            grid.RowStyles.Add(new RowStyle(SizeType.Absolute, 30)); // 3
-            grid.RowStyles.Add(new RowStyle(SizeType.Absolute, 30)); // 4
-            grid.RowStyles.Add(new RowStyle(SizeType.Absolute, 30)); // 5
+            // tlGeneral
+            tlGeneral.ColumnCount = 2;
+            tlGeneral.RowCount = 6;
+            tlGeneral.Dock = DockStyle.Fill;
+            tlGeneral.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 120F));
+            tlGeneral.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+            tlGeneral.RowStyles.Add(new RowStyle(SizeType.Absolute, 38F));
+            tlGeneral.RowStyles.Add(new RowStyle(SizeType.Absolute, 38F));
+            tlGeneral.RowStyles.Add(new RowStyle(SizeType.Absolute, 125F));
+            tlGeneral.RowStyles.Add(new RowStyle(SizeType.Absolute, 38F));
+            tlGeneral.RowStyles.Add(new RowStyle(SizeType.Absolute, 38F));
+            tlGeneral.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
 
-            // =========================
-            // CONTROLES
-            // =========================
-            txtCodigo = new TextBox { Dock = DockStyle.Fill };
-            txtDescripcion = new TextBox { Dock = DockStyle.Fill };
-            txtReferencia = new TextBox { Dock = DockStyle.Fill };
+            tlGeneral.Controls.Add(MakeLabel("Código"), 0, 0);
+            tlGeneral.Controls.Add(txtCodigo, 1, 0);
 
-            cboUnidad = new ComboBox { Dock = DockStyle.Fill, DropDownStyle = ComboBoxStyle.DropDownList };
-            cboImpuesto = new ComboBox { Dock = DockStyle.Fill, DropDownStyle = ComboBoxStyle.DropDownList };
-            cboCategoria = new ComboBox { Dock = DockStyle.Fill, DropDownStyle = ComboBoxStyle.DropDownList };
-            cboSubcategoria = new ComboBox { Dock = DockStyle.Fill, DropDownStyle = ComboBoxStyle.DropDownList };
+            tlGeneral.Controls.Add(MakeLabel("Referencia"), 0, 1);
+            tlGeneral.Controls.Add(txtReferencia, 1, 1);
 
-            txtPrecioVenta = new TextBox { Dock = DockStyle.Fill };
-            txtPrecioCosto = new TextBox { Dock = DockStyle.Fill };
-            txtPrecioMayor = new TextBox { Dock = DockStyle.Fill };
+            tlGeneral.Controls.Add(MakeLabel("Descripción"), 0, 2);
+            tlGeneral.Controls.Add(txtDescripcion, 1, 2);
 
-            txtExistencia = new TextBox { Dock = DockStyle.Fill, ReadOnly = true, TabStop = false };
-            txtUltimoPrecioCompra = new TextBox { Dock = DockStyle.Fill, ReadOnly = true, TabStop = false };
-            txtPorcBeneficio = new TextBox { Dock = DockStyle.Fill };
+            tlGeneral.Controls.Add(MakeLabel("Categoría"), 0, 3);
+            tlGeneral.Controls.Add(cboCategoria, 1, 3);
 
-            chkActivo = new CheckBox { Text = "Activo", AutoSize = true };
-            chkBloqNegativo = new CheckBox { Text = "Bloquear venta en negativo", AutoSize = true };
+            tlGeneral.Controls.Add(MakeLabel("Subcategoría"), 0, 4);
+            tlGeneral.Controls.Add(cboSubcategoria, 1, 4);
 
-            // =========================
-            // GRID LAYOUT (FICHA)
-            // =========================
+            // grpFiscal
+            grpFiscal.Text = "Datos fiscales / e-CF";
+            grpFiscal.Dock = DockStyle.Fill;
+            grpFiscal.Padding = new Padding(12);
+            grpFiscal.Controls.Add(tlFiscal);
 
-            // Row 0
-            grid.Controls.Add(MakeLabel("Código"), 0, 0);
-            grid.Controls.Add(txtCodigo, 1, 0);
-            grid.SetColumnSpan(txtCodigo, 2);
+            // tlFiscal
+            tlFiscal.ColumnCount = 2;
+            tlFiscal.RowCount = 6;
+            tlFiscal.Dock = DockStyle.Fill;
+            tlFiscal.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 135F));
+            tlFiscal.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+            tlFiscal.RowStyles.Add(new RowStyle(SizeType.Absolute, 38F));
+            tlFiscal.RowStyles.Add(new RowStyle(SizeType.Absolute, 38F));
+            tlFiscal.RowStyles.Add(new RowStyle(SizeType.Absolute, 125F));
+            tlFiscal.RowStyles.Add(new RowStyle(SizeType.Absolute, 38F));
+            tlFiscal.RowStyles.Add(new RowStyle(SizeType.Absolute, 38F));
+            tlFiscal.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
 
-            grid.Controls.Add(MakeLabel("Impuesto (ITBIS)"), 3, 0);
-            grid.Controls.Add(cboImpuesto, 4, 0);
-            grid.SetColumnSpan(cboImpuesto, 2);
+            tlFiscal.Controls.Add(MakeLabel("Impuesto"), 0, 0);
+            tlFiscal.Controls.Add(cboImpuesto, 1, 0);
 
-            // Row 1
-            grid.Controls.Add(MakeLabel("Descripción"), 0, 1);
-            grid.Controls.Add(txtDescripcion, 1, 1);
-            grid.SetColumnSpan(txtDescripcion, 5);
+            tlFiscal.Controls.Add(MakeLabel("Tipo producto"), 0, 1);
+            tlFiscal.Controls.Add(cboTipoProducto, 1, 1);
 
-            // Row 2
-            grid.Controls.Add(MakeLabel("Referencia"), 0, 2);
-            grid.Controls.Add(txtReferencia, 1, 2);
-            grid.SetColumnSpan(txtReferencia, 2);
+            tlFiscal.Controls.Add(MakeLabel("Descripción fiscal"), 0, 2);
+            tlFiscal.Controls.Add(txtDescripcionFiscal, 1, 2);
 
-            grid.Controls.Add(MakeLabel("Unidad"), 3, 2);
-            grid.Controls.Add(cboUnidad, 4, 2);
-            grid.SetColumnSpan(cboUnidad, 2);
+            tlFiscal.Controls.Add(MakeLabel("Código item fiscal"), 0, 3);
+            tlFiscal.Controls.Add(txtCodigoItemFiscal, 1, 3);
 
-            // Row 3
-            grid.Controls.Add(MakeLabel("Categoría"), 0, 3);
-            grid.Controls.Add(cboCategoria, 1, 3);
-            grid.SetColumnSpan(cboCategoria, 2);
+            tlFiscal.Controls.Add(MakeLabel("Unidad e-CF"), 0, 4);
+            tlFiscal.Controls.Add(cboUnidad, 1, 4);
 
-            grid.Controls.Add(MakeLabel("Subcategoría"), 3, 3);
-            grid.Controls.Add(cboSubcategoria, 4, 3);
-            grid.SetColumnSpan(cboSubcategoria, 2);
+            // grpImagen
+            grpImagen.Text = "Imagen del producto";
+            grpImagen.Dock = DockStyle.Fill;
+            grpImagen.Padding = new Padding(12);
+            grpImagen.Controls.Add(tlImagen);
 
-            // Row 4
-            grid.Controls.Add(MakeLabel("Precio Venta"), 0, 4);
-            grid.Controls.Add(txtPrecioVenta, 1, 4);
+            // tlImagen
+            tlImagen.ColumnCount = 1;
+            tlImagen.RowCount = 2;
+            tlImagen.Dock = DockStyle.Fill;
+            tlImagen.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
+            tlImagen.RowStyles.Add(new RowStyle(SizeType.Absolute, 42F));
+            tlImagen.Controls.Add(picImagenProducto, 0, 0);
+            tlImagen.Controls.Add(flImagenButtons, 0, 1);
 
-            grid.Controls.Add(MakeLabel("Precio Costo"), 2, 4);
-            grid.Controls.Add(txtPrecioCosto, 3, 4);
+            // picImagenProducto
+            picImagenProducto.Dock = DockStyle.Fill;
+            picImagenProducto.BorderStyle = BorderStyle.FixedSingle;
+            picImagenProducto.BackColor = WinColor.White;
+            picImagenProducto.SizeMode = PictureBoxSizeMode.Zoom;
+            picImagenProducto.Margin = new Padding(3);
+            picImagenProducto.Name = "picImagenProducto";
 
-            grid.Controls.Add(MakeLabel("Precio x Mayor"), 4, 4);
-            grid.Controls.Add(txtPrecioMayor, 5, 4);
+            // flImagenButtons
+            flImagenButtons.Dock = DockStyle.Fill;
+            flImagenButtons.FlowDirection = FlowDirection.LeftToRight;
+            flImagenButtons.WrapContents = false;
+            flImagenButtons.Controls.Add(btnCargarImagen);
+            flImagenButtons.Controls.Add(btnQuitarImagen);
 
-            // Row 5
-            grid.Controls.Add(MakeLabel("Existencia"), 0, 5);
-            grid.Controls.Add(txtExistencia, 1, 5);
+            btnCargarImagen.Text = "Cargar imagen";
+            btnCargarImagen.AutoSize = true;
+            btnCargarImagen.Padding = new Padding(8, 4, 8, 4);
+            btnCargarImagen.Name = "btnCargarImagen";
 
-            grid.Controls.Add(MakeLabel("Ult. Precio Compra"), 2, 5);
-            grid.Controls.Add(txtUltimoPrecioCompra, 3, 5);
+            btnQuitarImagen.Text = "Quitar imagen";
+            btnQuitarImagen.AutoSize = true;
+            btnQuitarImagen.Padding = new Padding(8, 4, 8, 4);
+            btnQuitarImagen.Name = "btnQuitarImagen";
 
-            grid.Controls.Add(MakeLabel("% Bfº bruto"), 4, 5);
-            grid.Controls.Add(txtPorcBeneficio, 5, 5);
+            // grpPrecios
+            grpPrecios.Text = "Precios";
+            grpPrecios.Dock = DockStyle.Fill;
+            grpPrecios.Padding = new Padding(12);
+            grpPrecios.Controls.Add(tlPrecios);
 
-            // Flow activo (abajo del card)
-            var flow = new FlowLayoutPanel
-            {
-                Dock = DockStyle.Bottom,
-                Height = 44,
-                FlowDirection = FlowDirection.LeftToRight,
-                Padding = new Padding(8, 0, 8, 8),
-                WrapContents = false,
-                AutoScroll = true
-            };
+            // tlPrecios
+            tlPrecios.ColumnCount = 2;
+            tlPrecios.RowCount = 5;
+            tlPrecios.Dock = DockStyle.Fill;
+            tlPrecios.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 140F));
+            tlPrecios.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+            tlPrecios.RowStyles.Add(new RowStyle(SizeType.Absolute, 42F));
+            tlPrecios.RowStyles.Add(new RowStyle(SizeType.Absolute, 42F));
+            tlPrecios.RowStyles.Add(new RowStyle(SizeType.Absolute, 42F));
+            tlPrecios.RowStyles.Add(new RowStyle(SizeType.Absolute, 42F));
+            tlPrecios.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
 
-            flow.Controls.Add(chkActivo);
-            flow.Controls.Add(chkBloqNegativo);
+            tlPrecios.Controls.Add(MakeLabel("Precio venta"), 0, 0);
+            tlPrecios.Controls.Add(txtPrecioVenta, 1, 0);
 
-            card.Controls.Add(grid);
-            card.Controls.Add(flow);
+            tlPrecios.Controls.Add(MakeLabel("Precio costo"), 0, 1);
+            tlPrecios.Controls.Add(txtPrecioCosto, 1, 1);
 
-            // =========================
-            // MID (BARRAS)
-            // =========================
-            var panelBarras = new Panel { Dock = DockStyle.Fill, Padding = new Padding(0, 8, 0, 0) };
+            tlPrecios.Controls.Add(MakeLabel("Precio mayor"), 0, 2);
+            tlPrecios.Controls.Add(txtPrecioMayor, 1, 2);
 
-            var topBarras = new FlowLayoutPanel
-            {
-                Dock = DockStyle.Top,
-                Height = 40,
-                FlowDirection = FlowDirection.LeftToRight,
-                Padding = new Padding(0, 0, 0, 8)
-            };
+            // grpInventario
+            grpInventario.Text = "Inventario / márgenes";
+            grpInventario.Dock = DockStyle.Fill;
+            grpInventario.Padding = new Padding(12);
+            grpInventario.Controls.Add(tlInventario);
 
-            txtBarraManual = new TextBox { Width = 240 };
-            btnAgregarBarraManual = new Button { Text = "Agregar Manual", Width = 120 };
-            btnAgregarBarraAuto = new Button { Text = "Generar Auto", Width = 120 };
-            btnEliminarBarra = new Button { Text = "Eliminar", Width = 90 };
-            btnFinalizar = new Button { Text = "Finalizar", Width = 110, Height = 34 };
+            // tlInventario
+            tlInventario.ColumnCount = 2;
+            tlInventario.RowCount = 5;
+            tlInventario.Dock = DockStyle.Fill;
+            tlInventario.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 145F));
+            tlInventario.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+            tlInventario.RowStyles.Add(new RowStyle(SizeType.Absolute, 42F));
+            tlInventario.RowStyles.Add(new RowStyle(SizeType.Absolute, 42F));
+            tlInventario.RowStyles.Add(new RowStyle(SizeType.Absolute, 42F));
+            tlInventario.RowStyles.Add(new RowStyle(SizeType.Absolute, 42F));
+            tlInventario.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
 
-            topBarras.Controls.AddRange(new Control[]
-            {
-                new Label { Text = "Código Barra:", AutoSize = true, TextAlign = System.Drawing.ContentAlignment.MiddleLeft },
-                txtBarraManual,
-                btnAgregarBarraManual,
-                btnAgregarBarraAuto,
-                btnEliminarBarra
-            });
+            tlInventario.Controls.Add(MakeLabel("Existencia"), 0, 0);
+            tlInventario.Controls.Add(txtExistencia, 1, 0);
 
-            gridBarras = new DataGridView
-            {
-                Dock = DockStyle.Fill,
-                ReadOnly = true,
-                AllowUserToAddRows = false,
-                AllowUserToDeleteRows = false,
-                RowHeadersVisible = false,
-                SelectionMode = DataGridViewSelectionMode.FullRowSelect,
-                MultiSelect = false,
-                AutoGenerateColumns = false,
-                AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill
-            };
+            tlInventario.Controls.Add(MakeLabel("Último precio compra"), 0, 1);
+            tlInventario.Controls.Add(txtUltimoPrecioCompra, 1, 1);
 
-            colBarraCodigo = new DataGridViewTextBoxColumn
-            {
-                HeaderText = "Código",
-                DataPropertyName = "CodigoBarras",
-                FillWeight = 35,
-                Name = "colBarraCodigo"
-            };
-            colBarraTipo = new DataGridViewTextBoxColumn
-            {
-                HeaderText = "Tipo",
-                DataPropertyName = "Tipo",
-                FillWeight = 10,
-                Name = "colBarraTipo"
-            };
-            colBarraUsuario = new DataGridViewTextBoxColumn
-            {
-                HeaderText = "Usuario",
-                DataPropertyName = "Usuario",
-                FillWeight = 20,
-                Name = "colBarraUsuario"
-            };
-            colBarraUltUso = new DataGridViewTextBoxColumn
-            {
-                HeaderText = "Último uso",
-                DataPropertyName = "UltimaFechaUtilizacion",
-                FillWeight = 20,
-                Name = "colBarraUltUso",
-                DefaultCellStyle = new DataGridViewCellStyle { Format = "g" }
-            };
+            tlInventario.Controls.Add(MakeLabel("% beneficio"), 0, 2);
+            tlInventario.Controls.Add(txtPorcBeneficio, 1, 2);
 
+            // flChecks
+            flChecks.Dock = DockStyle.Fill;
+            flChecks.FlowDirection = FlowDirection.TopDown;
+            flChecks.WrapContents = false;
+            flChecks.Padding = new Padding(40, 18, 12, 12);
+            flChecks.Controls.Add(chkActivo);
+            flChecks.Controls.Add(chkPrecioIncluyeITBIS);
+            flChecks.Controls.Add(chkBloqNegativo);
+
+            chkActivo.Text = "Producto activo";
+            chkActivo.AutoSize = true;
+            chkActivo.Margin = new Padding(3, 3, 3, 8);
+            chkActivo.Name = "chkActivo";
+
+            chkPrecioIncluyeITBIS.Text = "Precio incluye ITBIS";
+            chkPrecioIncluyeITBIS.AutoSize = true;
+            chkPrecioIncluyeITBIS.Margin = new Padding(24, 0, 3, 8);
+            chkPrecioIncluyeITBIS.Name = "chkPrecioIncluyeITBIS";
+            chkPrecioIncluyeITBIS.Enabled = false;
+            chkPrecioIncluyeITBIS.AutoCheck = false;
+
+            chkBloqNegativo.Text = "Bloquear stock negativo";
+            chkBloqNegativo.AutoSize = true;
+            chkBloqNegativo.Margin = new Padding(3, 0, 3, 3);
+            chkBloqNegativo.Name = "chkBloqNegativo";
+
+            // grpBarras
+            grpBarras.Text = "Códigos de barra";
+            grpBarras.Dock = DockStyle.Fill;
+            grpBarras.Padding = new Padding(12);
+            grpBarras.Controls.Add(tlBarras);
+
+            // tlBarras
+            tlBarras.ColumnCount = 1;
+            tlBarras.RowCount = 2;
+            tlBarras.Dock = DockStyle.Fill;
+            tlBarras.RowStyles.Add(new RowStyle(SizeType.Absolute, 46F));
+            tlBarras.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
+            tlBarras.Controls.Add(flBarrasTop, 0, 0);
+            tlBarras.Controls.Add(gridBarras, 0, 1);
+
+            // flBarrasTop
+            flBarrasTop.Dock = DockStyle.Fill;
+            flBarrasTop.FlowDirection = FlowDirection.LeftToRight;
+            flBarrasTop.WrapContents = false;
+            flBarrasTop.Controls.Add(txtBarraManual);
+            flBarrasTop.Controls.Add(btnAgregarBarraManual);
+            flBarrasTop.Controls.Add(btnAgregarBarraAuto);
+            flBarrasTop.Controls.Add(btnEliminarBarra);
+
+            txtBarraManual.Width = 220;
+            txtBarraManual.Name = "txtBarraManual";
+
+            btnAgregarBarraManual.Text = "Agregar manual";
+            btnAgregarBarraManual.AutoSize = true;
+            btnAgregarBarraManual.Padding = new Padding(8, 4, 8, 4);
+            btnAgregarBarraManual.Name = "btnAgregarBarraManual";
+
+            btnAgregarBarraAuto.Text = "Generar auto";
+            btnAgregarBarraAuto.AutoSize = true;
+            btnAgregarBarraAuto.Padding = new Padding(8, 4, 8, 4);
+            btnAgregarBarraAuto.Name = "btnAgregarBarraAuto";
+
+            btnEliminarBarra.Text = "Eliminar";
+            btnEliminarBarra.AutoSize = true;
+            btnEliminarBarra.Padding = new Padding(8, 4, 8, 4);
+            btnEliminarBarra.Name = "btnEliminarBarra";
+
+            // gridBarras
+            gridBarras.Dock = DockStyle.Fill;
+            gridBarras.AllowUserToAddRows = false;
+            gridBarras.AllowUserToDeleteRows = false;
+            gridBarras.AllowUserToResizeRows = false;
+            gridBarras.ReadOnly = true;
+            gridBarras.MultiSelect = false;
+            gridBarras.SelectionMode = DataGridViewSelectionMode.FullRowSelect;
+            gridBarras.AutoGenerateColumns = false;
+            gridBarras.RowHeadersVisible = false;
+            gridBarras.BackgroundColor = WinColor.White;
+            gridBarras.BorderStyle = BorderStyle.FixedSingle;
+            gridBarras.Name = "gridBarras";
             gridBarras.Columns.AddRange(new DataGridViewColumn[]
             {
                 colBarraCodigo,
@@ -281,42 +457,112 @@ namespace Andloe.Presentacion
                 colBarraUltUso
             });
 
-            panelBarras.Controls.Add(gridBarras);
-            panelBarras.Controls.Add(topBarras);
+            colBarraCodigo.DataPropertyName = "CodigoBarras";
+            colBarraCodigo.HeaderText = "Código";
+            colBarraCodigo.Name = "colBarraCodigo";
+            colBarraCodigo.AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill;
+            colBarraCodigo.FillWeight = 35F;
 
-            // =========================
-            // BOTTOM BOTONES
-            // =========================
-            var bottom = new FlowLayoutPanel
-            {
-                Dock = DockStyle.Fill,
-                FlowDirection = FlowDirection.RightToLeft,
-                Padding = new Padding(0, 8, 0, 0)
-            };
+            colBarraTipo.DataPropertyName = "Tipo";
+            colBarraTipo.HeaderText = "Tipo";
+            colBarraTipo.Name = "colBarraTipo";
+            colBarraTipo.AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill;
+            colBarraTipo.FillWeight = 15F;
 
-            btnCerrar = new Button { Text = "Cerrar", Width = 110, Height = 34 };
-            btnGuardar = new Button { Text = "Guardar", Width = 110, Height = 34 };
-            btnSiguiente = new Button { Text = "Siguiente >", Width = 110, Height = 34 };
-            btnAtras = new Button { Text = "< Atrás", Width = 110, Height = 34 };
+            colBarraUsuario.DataPropertyName = "Usuario";
+            colBarraUsuario.HeaderText = "Usuario";
+            colBarraUsuario.Name = "colBarraUsuario";
+            colBarraUsuario.AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill;
+            colBarraUsuario.FillWeight = 20F;
 
-            bottom.Controls.AddRange(new Control[] { btnCerrar, btnGuardar, btnSiguiente, btnAtras });
+            colBarraUltUso.DataPropertyName = "UltimaFechaUtilizacion";
+            colBarraUltUso.HeaderText = "Último uso";
+            colBarraUltUso.Name = "colBarraUltUso";
+            colBarraUltUso.AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill;
+            colBarraUltUso.FillWeight = 30F;
 
-            // =========================
-            // ROOT ADD
-            // =========================
-            root.Controls.Add(card, 0, 0);
-            root.Controls.Add(panelBarras, 0, 1);
-            root.Controls.Add(bottom, 0, 2);
+            // panelBottom
+            panelBottom.Dock = DockStyle.Fill;
+            panelBottom.Controls.Add(flBottom);
 
-            // =========================
-            // FORM
-            // =========================
+            // flBottom
+            flBottom.Dock = DockStyle.Fill;
+            flBottom.FlowDirection = FlowDirection.LeftToRight;
+            flBottom.WrapContents = false;
+            flBottom.Padding = new Padding(0, 10, 0, 10);
+            flBottom.AutoScroll = false;
+            flBottom.Controls.Add(btnAtras);
+            flBottom.Controls.Add(btnSiguiente);
+            flBottom.Controls.Add(btnGuardar);
+            flBottom.Controls.Add(btnFinalizar);
+
+            btnAtras.Text = "Atrás";
+            btnAtras.AutoSize = true;
+            btnAtras.Padding = new Padding(12, 5, 12, 5);
+            btnAtras.Margin = new Padding(0, 0, 10, 0);
+            btnAtras.Name = "btnAtras";
+
+            btnSiguiente.Text = "Siguiente";
+            btnSiguiente.AutoSize = true;
+            btnSiguiente.Padding = new Padding(12, 5, 12, 5);
+            btnSiguiente.Margin = new Padding(0, 0, 10, 0);
+            btnSiguiente.Name = "btnSiguiente";
+
+            btnGuardar.Text = "Guardar";
+            btnGuardar.AutoSize = true;
+            btnGuardar.Padding = new Padding(12, 5, 12, 5);
+            btnGuardar.Margin = new Padding(0, 0, 10, 0);
+            btnGuardar.Name = "btnGuardar";
+
+            btnFinalizar.Text = "Finalizar";
+            btnFinalizar.AutoSize = true;
+            btnFinalizar.Padding = new Padding(12, 5, 12, 5);
+            btnFinalizar.Margin = new Padding(0);
+            btnFinalizar.Name = "btnFinalizar";
+
+            // combos
+            cboUnidad.DropDownStyle = ComboBoxStyle.DropDownList;
+            cboImpuesto.DropDownStyle = ComboBoxStyle.DropDownList;
+            cboCategoria.DropDownStyle = ComboBoxStyle.DropDownList;
+            cboSubcategoria.DropDownStyle = ComboBoxStyle.DropDownList;
+            cboTipoProducto.DropDownStyle = ComboBoxStyle.DropDownList;
+            cboTipoProducto.Items.AddRange(new object[] { "Bien", "Servicio" });
+
+            // textboxes
+            txtCodigo.Name = "txtCodigo";
+
+            txtDescripcion.Name = "txtDescripcion";
+            txtDescripcion.Multiline = true;
+            txtDescripcion.ScrollBars = ScrollBars.Vertical;
+            txtDescripcion.Dock = DockStyle.Fill;
+
+            txtDescripcionFiscal.Name = "txtDescripcionFiscal";
+            txtDescripcionFiscal.Multiline = true;
+            txtDescripcionFiscal.ScrollBars = ScrollBars.Vertical;
+            txtDescripcionFiscal.Dock = DockStyle.Fill;
+
+            txtReferencia.Name = "txtReferencia";
+            txtCodigoItemFiscal.Name = "txtCodigoItemFiscal";
+            txtPrecioVenta.Name = "txtPrecioVenta";
+            txtPrecioCosto.Name = "txtPrecioCosto";
+            txtPrecioMayor.Name = "txtPrecioMayor";
+            txtExistencia.Name = "txtExistencia";
+            txtUltimoPrecioCompra.Name = "txtUltimoPrecioCompra";
+            txtPorcBeneficio.Name = "txtPorcBeneficio";
+
+            // form
+            AutoScaleDimensions = new SizeF(7F, 15F);
             AutoScaleMode = AutoScaleMode.Font;
-            ClientSize = new System.Drawing.Size(980, 680);
+            ClientSize = new Size(1180, 820);
             Controls.Add(root);
+            MinimumSize = new Size(1100, 760);
             Name = "FormProductoEdit";
             StartPosition = FormStartPosition.CenterParent;
             Text = "Producto";
+
+            ((ISupportInitialize)(picImagenProducto)).EndInit();
+            ((ISupportInitialize)(gridBarras)).EndInit();
+            ResumeLayout(false);
         }
     }
 }

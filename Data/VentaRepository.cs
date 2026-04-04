@@ -9,11 +9,21 @@ namespace Andloe.Data
     {
         public long InsertCabecera(Venta v, SqlTransaction tx)
         {
-            if (tx == null)
-                throw new ArgumentNullException(nameof(tx));
+            if (v == null) throw new ArgumentNullException(nameof(v));
+            if (tx == null) throw new ArgumentNullException(nameof(tx));
 
             var cn = tx.Connection
                      ?? throw new InvalidOperationException("Transacción sin conexión asociada.");
+
+            // Reglas seguras (no asumimos, solo blindamos)
+            var moneda = string.IsNullOrWhiteSpace(v.MonedaCodigo) ? "DOP" : v.MonedaCodigo.Trim();
+            var estado = string.IsNullOrWhiteSpace(v.Estado) ? "FACTURADA" : v.Estado.Trim();
+            var fechaCreacion = v.FechaCreacion == default ? DateTime.Now : v.FechaCreacion;
+            var fecha = v.Fecha == default ? DateTime.Now : v.Fecha;
+
+            // IMPORTANTE: en tu BD TerminoPagoId es NOT NULL con DEFAULT (1),
+            // pero aquí lo garantizamos si viene 0 o negativo.
+            var terminoPagoId = v.TerminoPagoId <= 0 ? 1 : v.TerminoPagoId;
 
             using var cmd = new SqlCommand(@"
 INSERT INTO dbo.VentaCab(
@@ -43,14 +53,14 @@ INSERT INTO dbo.VentaCab(
     TerminoPagoId,
     POS_CajaNumero
 )
-VALUES(
+SELECT
     @NoDocumento,
     @Fecha,
     @ClienteCodigo,
-    (SELECT TOP(1) ClienteId FROM dbo.Cliente WHERE [Código] = @ClienteCodigo),
-    (SELECT TOP(1) Nombre    FROM dbo.Cliente WHERE [Código] = @ClienteCodigo),
-    (SELECT TOP(1) Email     FROM dbo.Cliente WHERE [Código] = @ClienteCodigo),
-    (SELECT TOP(1) Telefono  FROM dbo.Cliente WHERE [Código] = @ClienteCodigo),
+    COALESCE(C.ClienteId, @ClienteIdManual),
+    COALESCE(C.Nombre,    @NombreClienteManual),
+    COALESCE(C.Email,     @EmailClienteManual),
+    COALESCE(C.Telefono,  @TelefonoClienteManual),
     @MonedaCodigo,
     @TasaCambio,
     @Subtotal,
@@ -69,32 +79,52 @@ VALUES(
     @TotalMoneda,
     @TerminoPagoId,
     @POS_CajaNumero
-);
+FROM (SELECT 1 AS X) D
+OUTER APPLY (
+    SELECT TOP(1) ClienteId, Nombre, Email, Telefono
+    FROM dbo.Cliente
+    WHERE [Código] = @ClienteCodigo
+) C;
+
 SELECT CAST(SCOPE_IDENTITY() AS BIGINT);", cn, tx);
 
             // NoDocumento
-            cmd.Parameters.Add("@NoDocumento", SqlDbType.VarChar, 20).Value = v.NoDocumento;
+            cmd.Parameters.Add("@NoDocumento", SqlDbType.VarChar, 20).Value = v.NoDocumento?.Trim() ?? "";
 
             // Fecha
-            cmd.Parameters.Add("@Fecha", SqlDbType.DateTime).Value = v.Fecha;
+            cmd.Parameters.Add("@Fecha", SqlDbType.DateTime).Value = fecha;
 
             // ClienteCodigo
             if (string.IsNullOrWhiteSpace(v.ClienteCodigo))
                 cmd.Parameters.Add("@ClienteCodigo", SqlDbType.VarChar, 20).Value = DBNull.Value;
             else
-                cmd.Parameters.Add("@ClienteCodigo", SqlDbType.VarChar, 20).Value = v.ClienteCodigo;
+                cmd.Parameters.Add("@ClienteCodigo", SqlDbType.VarChar, 20).Value = v.ClienteCodigo.Trim();
+
+            // Datos manuales (por si el cliente no existe en tabla Cliente)
+            // No forzamos nada: si tú no los llenas, quedan NULL y ya.
+            cmd.Parameters.Add("@ClienteIdManual", SqlDbType.Int).Value =
+                v.ClienteId.HasValue ? v.ClienteId.Value : DBNull.Value;
+
+            cmd.Parameters.Add("@NombreClienteManual", SqlDbType.VarChar, 120).Value =
+                string.IsNullOrWhiteSpace(v.NombreCliente) ? DBNull.Value : v.NombreCliente.Trim();
+
+            cmd.Parameters.Add("@EmailClienteManual", SqlDbType.VarChar, 120).Value =
+                string.IsNullOrWhiteSpace(v.EmailCliente) ? DBNull.Value : v.EmailCliente.Trim();
+
+            cmd.Parameters.Add("@TelefonoClienteManual", SqlDbType.VarChar, 40).Value =
+                string.IsNullOrWhiteSpace(v.TelefonoCliente) ? DBNull.Value : v.TelefonoCliente.Trim();
 
             // Moneda
-            cmd.Parameters.Add("@MonedaCodigo", SqlDbType.VarChar, 3).Value = v.MonedaCodigo ?? "DOP";
+            cmd.Parameters.Add("@MonedaCodigo", SqlDbType.VarChar, 3).Value = moneda;
 
-            // 🔹 TerminoPagoId
-            cmd.Parameters.Add("@TerminoPagoId", SqlDbType.Int).Value = v.TerminoPagoId;
+            // TerminoPagoId (ya blindado)
+            cmd.Parameters.Add("@TerminoPagoId", SqlDbType.Int).Value = terminoPagoId;
 
             // TasaCambio
             var pTasa = cmd.Parameters.Add("@TasaCambio", SqlDbType.Decimal);
             pTasa.Precision = 18;
             pTasa.Scale = 6;
-            pTasa.Value = v.TasaCambio;
+            pTasa.Value = v.TasaCambio <= 0 ? 1m : v.TasaCambio;
 
             // Subtotal
             var pSub = cmd.Parameters.Add("@Subtotal", SqlDbType.Decimal);
@@ -121,26 +151,22 @@ SELECT CAST(SCOPE_IDENTITY() AS BIGINT);", cn, tx);
             pTot.Value = v.Total;
 
             // Estado
-            cmd.Parameters.Add("@Estado", SqlDbType.VarChar, 12)
-               .Value = v.Estado ?? "FACTURADA";
+            cmd.Parameters.Add("@Estado", SqlDbType.VarChar, 12).Value = estado;
 
             // Usuario
-            cmd.Parameters.Add("@Usuario", SqlDbType.VarChar, 50)
-               .Value = (object?)v.Usuario ?? DBNull.Value;
+            cmd.Parameters.Add("@Usuario", SqlDbType.VarChar, 50).Value =
+                string.IsNullOrWhiteSpace(v.Usuario) ? DBNull.Value : v.Usuario.Trim();
 
             // Observacion
-            cmd.Parameters.Add("@Observacion", SqlDbType.VarChar, 200)
-               .Value = (object?)v.Observacion ?? DBNull.Value;
+            cmd.Parameters.Add("@Observacion", SqlDbType.VarChar, 200).Value =
+                string.IsNullOrWhiteSpace(v.Observacion) ? DBNull.Value : v.Observacion.Trim();
 
             // FechaCreacion
-            cmd.Parameters.Add("@FechaCreacion", SqlDbType.DateTime)
-               .Value = v.FechaCreacion == default ? DateTime.Now : v.FechaCreacion;
+            cmd.Parameters.Add("@FechaCreacion", SqlDbType.DateTime).Value = fechaCreacion;
 
             // MedioPagoId
-            if (v.MedioPagoId.HasValue)
-                cmd.Parameters.Add("@MedioPagoId", SqlDbType.Int).Value = v.MedioPagoId.Value;
-            else
-                cmd.Parameters.Add("@MedioPagoId", SqlDbType.Int).Value = DBNull.Value;
+            cmd.Parameters.Add("@MedioPagoId", SqlDbType.Int).Value =
+                v.MedioPagoId.HasValue ? v.MedioPagoId.Value : DBNull.Value;
 
             // MontoPago
             var pPago = cmd.Parameters.Add("@MontoPago", SqlDbType.Decimal);
@@ -154,7 +180,7 @@ SELECT CAST(SCOPE_IDENTITY() AS BIGINT);", cn, tx);
             pCambio.Scale = 2;
             pCambio.Value = v.MontoCambio;
 
-            // Totales en moneda
+            // Totales en moneda (si vienen 0, caen al valor base)
             var pSubMon = cmd.Parameters.Add("@SubTotalMoneda", SqlDbType.Decimal);
             pSubMon.Precision = 18;
             pSubMon.Scale = 2;
@@ -170,11 +196,9 @@ SELECT CAST(SCOPE_IDENTITY() AS BIGINT);", cn, tx);
             pTotMon.Scale = 2;
             pTotMon.Value = v.TotalMoneda == 0 ? v.Total : v.TotalMoneda;
 
-            // 🔹 POS_CajaNumero
-            if (string.IsNullOrWhiteSpace(v.POS_CajaNumero))
-                cmd.Parameters.Add("@POS_CajaNumero", SqlDbType.NVarChar, 10).Value = DBNull.Value;
-            else
-                cmd.Parameters.Add("@POS_CajaNumero", SqlDbType.NVarChar, 10).Value = v.POS_CajaNumero;
+            // POS_CajaNumero
+            cmd.Parameters.Add("@POS_CajaNumero", SqlDbType.NVarChar, 10).Value =
+                string.IsNullOrWhiteSpace(v.POS_CajaNumero) ? DBNull.Value : v.POS_CajaNumero.Trim();
 
             var obj = cmd.ExecuteScalar();
             return (obj == null || obj == DBNull.Value) ? 0L : Convert.ToInt64(obj);

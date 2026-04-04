@@ -1,0 +1,4335 @@
+﻿using Andloe.Data;
+using Andloe.Entidad;
+using System;
+
+namespace Andloe.Logica
+{
+    public class AuditoriaService
+    {
+        private readonly AuditoriaRepository _repo = new();
+
+        public void Log(
+            string modulo,
+            string accion,
+            string? entidad = null,
+            string? entidadId = null,
+            string? detalle = null,
+            string? antesJson = null,
+            string? despuesJson = null)
+        {
+            try
+            {
+                var log = new AuditoriaLog
+                {
+                    Fecha = DateTime.Now,
+                    UsuarioId = AuditContext.UsuarioId,
+                    Usuario = AuditContext.Usuario,
+
+                    Modulo = (modulo ?? "").Trim(),
+                    Accion = (accion ?? "").Trim(),
+
+                    Entidad = entidad,
+                    EntidadId = entidadId,
+
+                    Detalle = detalle,
+                    AntesJson = antesJson,
+                    DespuesJson = despuesJson,
+
+                    Maquina = AuditContext.Maquina,
+                    Ip = AuditContext.Ip
+                };
+
+                _repo.Insert(log);
+            }
+            catch
+            {
+                // Auditoría nunca debe tumbar la app.
+            }
+        }
+    }
+}
+﻿using System.Collections.Concurrent;
+
+namespace Andloe.Logica;
+
+public class AuthorizationService
+{
+    private readonly HashSet<string> _roles;
+    private readonly HashSet<string> _perms;
+
+    // Mapa simple de rol -> permisos
+    private static readonly ConcurrentDictionary<string, string[]> RolePerms = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["Administrador"] = new[]
+        {
+            Permisos.VerDashboard, Permisos.VerUsuarios, Permisos.EditUsuarios,
+            Permisos.VerPOS, Permisos.Configurar
+        },
+        ["CajeroPOS"] = new[] { Permisos.VerDashboard, Permisos.VerPOS },
+        ["Vendedor"] = new[] { Permisos.VerDashboard, Permisos.VerPOS }
+    };
+
+    public AuthorizationService(IEnumerable<string> roles)
+    {
+        _roles = new HashSet<string>(roles ?? Array.Empty<string>(), StringComparer.OrdinalIgnoreCase);
+        _perms = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var r in _roles)
+            if (RolePerms.TryGetValue(r, out var list))
+                foreach (var p in list) _perms.Add(p);
+    }
+
+    public bool HasRole(string role) => _roles.Contains(role);
+    public bool Can(string perm) => _perms.Contains(perm);
+}
+﻿using System;
+using System.Security.Cryptography;
+using System.Text;
+using Andloe.Data;
+using Andloe.Entidad;
+
+namespace Andloe.Logica
+{
+    public class AuthService
+    {
+        private readonly UsuarioRepository _repo = new();
+        private const int MAX_INTENTOS = 5;
+        private static readonly TimeSpan BLOQUEO = TimeSpan.FromMinutes(15);
+
+        public AuthResult Login(string usuario, string password)
+        {
+            usuario = (usuario ?? string.Empty).Trim();
+
+            var u = _repo.ObtenerPorUsuario(usuario);
+            if (u is null)
+                return Fail("Usuario o contraseña inválidos.");
+
+            if (!string.Equals(u.Estado, "Activo", StringComparison.OrdinalIgnoreCase))
+                return Fail($"Usuario en estado '{u.Estado}'.");
+
+            if (u.BloqueadoHasta is not null && u.BloqueadoHasta > DateTime.UtcNow)
+            {
+                var mins = (int)Math.Ceiling((u.BloqueadoHasta.Value - DateTime.UtcNow).TotalMinutes);
+                return Fail($"Usuario bloqueado. Intente en {Math.Max(mins, 1)} minuto(s).");
+            }
+
+            var passBytes = Encoding.Unicode.GetBytes(password ?? string.Empty);
+            var toHash = new byte[u.Salt.Length + passBytes.Length];
+            Buffer.BlockCopy(u.Salt, 0, toHash, 0, u.Salt.Length);
+            Buffer.BlockCopy(passBytes, 0, toHash, u.Salt.Length, passBytes.Length);
+
+            // ✅ recomendado (evita warning)
+            var hash = SHA256.HashData(toHash);
+
+            if (!FixedTimeEquals(hash, u.HashPassword))
+            {
+                var intentos = u.IntentosFallidos + 1;
+                DateTime? bloqueado = null;
+
+                if (intentos >= MAX_INTENTOS)
+                {
+                    bloqueado = DateTime.UtcNow.Add(BLOQUEO);
+                    intentos = 0;
+                }
+
+                _repo.RegistrarAccesoFallido(u.UsuarioId, intentos, bloqueado);
+
+                return Fail(bloqueado is null
+                    ? $"Credenciales inválidas. Intentos: {intentos}/{MAX_INTENTOS}."
+                    : $"Demasiados intentos. Usuario bloqueado {BLOQUEO.TotalMinutes:0} minutos.");
+            }
+
+            _repo.RegistrarAccesoExitoso(u.UsuarioId);
+
+            var roles = _repo.ObtenerRoles(u.UsuarioId);
+
+            u.HashPassword = Array.Empty<byte>();
+            u.Salt = Array.Empty<byte>();
+
+            return new AuthResult
+            {
+                Exitoso = true,
+                Mensaje = "Login OK.",
+                Usuario = u,
+                Roles = roles
+            };
+
+            static AuthResult Fail(string msg) => new() { Exitoso = false, Mensaje = msg };
+        }
+
+        private static bool FixedTimeEquals(byte[] a, byte[] b)
+        {
+            if (a is null || b is null || a.Length != b.Length) return false;
+            var diff = 0;
+            for (int i = 0; i < a.Length; i++)
+                diff |= a[i] ^ b[i];
+            return diff == 0;
+        }
+    }
+}
+﻿using Andloe.Data;
+using System;
+using System.Collections.Generic;
+
+namespace Andloe.Logica
+{
+    /// <summary>
+    /// Servicio para administrar cajas (crear, editar, eliminar)
+    /// validando por sucursal que no se repitan números de caja.
+    /// </summary>
+    public class CajaAdminService
+    {
+        private readonly CajaRepository _repo = new();
+
+        // ==========================
+        //     LISTADOS / CONSULTAS
+        // ==========================
+
+        /// <summary>
+        /// Lista todas las cajas activas (todas las sucursales).
+        /// </summary>
+        public List<CajaDto> ListarActivas()
+            => _repo.ListarActivas();
+
+        /// <summary>
+        /// Lista las cajas de una sucursal específica.
+        /// </summary>
+        public List<CajaDto> ListarPorSucursal(int sucursalId, bool soloActivas = false)
+        {
+            if (sucursalId <= 0)
+                throw new ArgumentException("SucursalId inválido.", nameof(sucursalId));
+
+            return _repo.ListarPorSucursal(sucursalId, soloActivas);
+        }
+
+        /// <summary>
+        /// Busca una caja por su ID.
+        /// </summary>
+        public CajaDto? ObtenerPorId(int cajaId)
+        {
+            if (cajaId <= 0)
+                return null;
+
+            return _repo.ObtenerPorId(cajaId);
+        }
+
+        // ==========================
+        //       CREAR / EDITAR
+        // ==========================
+
+        /// <summary>
+        /// Crea una caja nueva.
+        /// El CajaId se genera automáticamente con MAX(CajaId) + 1.
+        /// </summary>
+        public int CrearCaja(int sucursalId, string cajaNumero, string? descripcion, string estado)
+        {
+            if (sucursalId <= 0)
+                throw new ArgumentException("Debe seleccionar una sucursal válida.", nameof(sucursalId));
+            if (string.IsNullOrWhiteSpace(cajaNumero))
+                throw new ArgumentException("El número de caja es obligatorio.", nameof(cajaNumero));
+
+            if (_repo.ExisteNumeroEnSucursal(sucursalId, cajaNumero))
+                throw new InvalidOperationException($"Ya existe la caja {cajaNumero} en esa sucursal.");
+
+            var caja = new CajaDto
+            {
+                SucursalId = sucursalId,
+                CajaNumero = cajaNumero.Trim(),
+                Descripcion = string.IsNullOrWhiteSpace(descripcion) ? null : descripcion.Trim(),
+                Estado = string.IsNullOrWhiteSpace(estado) ? "ACTIVA" : estado.Trim().ToUpper()
+            };
+
+            // 👉 aquí recibes el nuevo ID
+            int nuevoId = _repo.InsertarCaja(caja);
+            return nuevoId;
+        }
+
+
+        /// <summary>
+        /// Actualiza una caja existente.
+        /// </summary>
+        public void ActualizarCaja(int cajaId, int sucursalId, string cajaNumero, string? descripcion, string estado)
+        {
+            if (cajaId <= 0)
+                throw new ArgumentException("CajaId inválido.", nameof(cajaId));
+
+            if (sucursalId <= 0)
+                throw new ArgumentException("Debe seleccionar una sucursal válida.", nameof(sucursalId));
+
+            if (string.IsNullOrWhiteSpace(cajaNumero))
+                throw new ArgumentException("El número de caja es obligatorio.", nameof(cajaNumero));
+
+            // Validar que no se repita el número en la sucursal (excluyendo esta misma caja)
+            if (_repo.ExisteNumeroEnSucursal(sucursalId, cajaNumero, cajaId))
+                throw new InvalidOperationException($"Ya existe la caja {cajaNumero} en esa sucursal.");
+
+            var caja = new CajaDto
+            {
+                CajaId = cajaId,
+                SucursalId = sucursalId,
+                CajaNumero = cajaNumero.Trim(),
+                Descripcion = string.IsNullOrWhiteSpace(descripcion) ? null : descripcion.Trim(),
+                Estado = string.IsNullOrWhiteSpace(estado) ? "ACTIVA" : estado.Trim().ToUpper()
+            };
+
+            _repo.ActualizarCaja(caja);
+        }
+
+        // ==========================
+        //          ELIMINAR
+        // ==========================
+
+        /// <summary>
+        /// Elimina una caja por ID.
+        /// </summary>
+        public void EliminarCaja(int cajaId)
+        {
+            if (cajaId <= 0)
+                throw new ArgumentException("CajaId inválido.", nameof(cajaId));
+
+            _repo.EliminarCaja(cajaId);
+        }
+
+
+    }
+}
+﻿using Andloe.Data;
+using Andloe.Entidad;
+using Microsoft.Data.SqlClient;
+using System;
+using System.Data;
+
+namespace Andloe.Logica
+{
+    public class cajaCierreService
+    {
+        private readonly CierreCajaRepository _repo = new();
+        private readonly FondoCajaRepository _fondoRepo = new();
+
+        public List<CierrePagoPosDetalleDto> ListarPagosPosPorCierre(long cierreId)
+            => _repo.ListarPagosPosPorCierre(cierreId);
+
+        public CierreCajaResumen CalcularResumen(string cajaNumero, DateTime desde, DateTime hasta)
+        {
+            return _repo.CalcularResumen(cajaNumero, desde, hasta);
+        }
+        public long CerrarTurno(
+            DateTime fechaDesde,
+            DateTime fechaHasta,
+            int cajaId,
+            string cajaNumero,
+            string usuarioCierre,
+            decimal? conteoEfectivoBase,
+            string? observacion)
+        {
+            using var cn = Db.GetOpenConnection();
+
+            using var cmd = new SqlCommand("sp_Caja_CerrarTurno", cn)
+            {
+                CommandType = CommandType.StoredProcedure
+            };
+
+            cmd.Parameters.Add("@FechaDesde", SqlDbType.DateTime2).Value = fechaDesde;
+            cmd.Parameters.Add("@FechaHasta", SqlDbType.DateTime2).Value = fechaHasta;
+            cmd.Parameters.Add("@CajaId", SqlDbType.Int).Value = cajaId;
+            cmd.Parameters.Add("@CajaNumero", SqlDbType.NVarChar, 10).Value = cajaNumero;
+            cmd.Parameters.Add("@UsuarioCierre", SqlDbType.NVarChar, 100).Value = usuarioCierre;
+
+            if (conteoEfectivoBase.HasValue)
+                cmd.Parameters.Add("@ConteoEfectivoBase", SqlDbType.Decimal).Value = conteoEfectivoBase.Value;
+            else
+                cmd.Parameters.Add("@ConteoEfectivoBase", SqlDbType.Decimal).Value = DBNull.Value;
+
+            cmd.Parameters.Add("@Observacion", SqlDbType.NVarChar, 200).Value =
+                (object?)observacion ?? DBNull.Value;
+
+            var pOut = cmd.Parameters.Add("@CierreId", SqlDbType.BigInt);
+            pOut.Direction = ParameterDirection.Output;
+
+            cmd.ExecuteNonQuery();
+
+            return Convert.ToInt64(pOut.Value);
+        }
+
+        public void ActualizarPagosPosConCierreId(long cierreId, string cajaNumero, DateTime desde, DateTime hasta)
+        {
+            using var cn = Db.GetOpenConnection();
+            using var cmd = new SqlCommand(@"
+UPDATE dbo.POS_Pago
+SET 
+    CierreId = @CierreId,
+    IncluidoEnCierre = 1
+WHERE 
+    POS_CajaNumero = @CajaNumero
+    AND Fecha >= @Desde
+    AND Fecha <= @Hasta
+    AND IncluidoEnCierre = 0;", cn);
+
+            cmd.Parameters.Add("@CierreId", SqlDbType.BigInt).Value = cierreId;
+            cmd.Parameters.Add("@CajaNumero", SqlDbType.NVarChar, 10).Value = cajaNumero;
+            cmd.Parameters.Add("@Desde", SqlDbType.DateTime).Value = desde;
+            cmd.Parameters.Add("@Hasta", SqlDbType.DateTime).Value = hasta;
+
+            cmd.ExecuteNonQuery();
+        }
+    
+
+    public long GuardarCierre(
+    int cajaId,
+    string cajaNumero,
+    DateTime desde,
+    DateTime hasta,
+    decimal fondoInicial,
+    decimal efectivoDeclarado,
+    string usuarioCierre)
+        {
+            var resumen = _repo.CalcularResumen(cajaNumero, desde, hasta);
+            var ahora = DateTime.Now;
+
+            var cierre = new CierreCaja
+            {
+                CajaId = cajaId,
+                POS_CajaNumero = cajaNumero,
+                FechaDesde = desde,
+                FechaHasta = hasta,
+                FondoInicial = fondoInicial,
+                TotalVentas = resumen.TotalVentas,
+                TotalPagos = resumen.TotalPagos,
+                EfectivoTeorico = resumen.EfectivoTeorico + fondoInicial,
+                EfectivoDeclarado = efectivoDeclarado,
+                Diferencia = efectivoDeclarado - (resumen.EfectivoTeorico + fondoInicial),
+                UsuarioCierre = usuarioCierre,
+                FechaCierre = ahora,
+                Estado = "CERRADO"
+            };
+
+            long cierreId = _repo.InsertarCierre(cierre);
+
+            // 🔥 ACTUALIZAR VENTAS
+            _repo.ActualizarVentasConCierreId(
+                cierreId,
+                cajaNumero,
+                desde,
+                hasta
+            );
+
+            // 🔥 ACTUALIZAR PAGOS POS
+            _repo.ActualizarPagosPosConCierreId(
+                cierreId,
+                cajaNumero,
+                desde,
+                hasta
+            );
+
+            // 🔥 Cerrar fondos de caja
+            _fondoRepo.CerrarFondosAbiertos(cajaId);
+
+            return cierreId;
+        }
+    }
+}
+
+
+
+
+﻿using Andloe.Data;
+using Andloe.Entidad;
+using System;
+using System.Collections.Generic;
+using System.Data;
+using System.Linq;
+
+namespace Andloe.Logica
+{
+    public class CierreCajaService
+    {
+        private readonly CierreCajaRepository _repo = new();
+        private readonly FondoCajaRepository _fondoRepo = new();
+        private readonly AuditoriaService _audit = new();
+
+        public List<CierrePagoPosDetalleDto> ListarPagosPosPorCierre(long cierreId)
+            => _repo.ListarPagosPosPorCierre(cierreId);
+
+        public CierreCajaResumen CalcularResumen(string cajaNumero, DateTime desde, DateTime hasta)
+        {
+            return _repo.CalcularResumen(cajaNumero, desde, hasta);
+        }
+
+        public long GuardarCierre(
+            int cajaId,
+            string cajaNumero,
+            DateTime desde,
+            DateTime hasta,
+            decimal fondoInicial,
+            decimal efectivoDeclarado,
+            string usuarioCierre)
+        {
+            if (string.IsNullOrWhiteSpace(cajaNumero))
+                throw new ArgumentException("El número de caja es obligatorio.", nameof(cajaNumero));
+
+            // Recalcular resumen para ese rango y caja
+            var resumen = _repo.CalcularResumen(cajaNumero, desde, hasta);
+            var ahora = DateTime.Now;
+            var efectivoTeoricoTotal = resumen.EfectivoTeorico + fondoInicial;
+            var diferencia = efectivoDeclarado - efectivoTeoricoTotal;
+
+            var cierre = new CierreCaja
+            {
+                CajaId = cajaId,
+                POS_CajaNumero = cajaNumero,
+                FechaDesde = desde,
+                FechaHasta = hasta,
+                FondoInicial = fondoInicial,
+                TotalVentas = resumen.TotalVentas,
+                TotalPagos = resumen.TotalPagos,
+                EfectivoTeorico = efectivoTeoricoTotal,
+                EfectivoDeclarado = efectivoDeclarado,
+                Diferencia = diferencia,
+                UsuarioCierre = usuarioCierre,
+                FechaCierre = ahora,
+                Estado = "CERRADO"
+            };
+
+            // 1) Graba cabecera de cierre
+            var cierreId = _repo.InsertarCierre(cierre);
+
+            // 1.1) Actualizar POS_Pago con el cierre (CierreId + IncluidoEnCierre = 1)
+            _repo.ActualizarPagosPosConCierreId(
+                cierreId,
+                cajaNumero,
+                desde,
+                hasta
+            );
+
+            // 1.2) Actualizar VentaCab con el cierre (CierreId + IncluidaEnCierre = 1)
+            _repo.ActualizarVentasConCierreId(
+                cierreId,
+                cajaNumero,
+                desde,
+                hasta
+            );
+
+            // 2) Marca el fondo de esa caja como CERRADO
+            _fondoRepo.CerrarFondosAbiertos(cajaId);
+
+            // ✅ Auditoría
+            _audit.Log(
+                modulo: "CAJA",
+                accion: "CIERRE",
+                entidad: "CajaCierreCab",
+                entidadId: cierreId.ToString(),
+                detalle: $"CajaId={cajaId} CajaNumero={cajaNumero} Desde={desde:yyyy-MM-dd HH:mm} Hasta={hasta:yyyy-MM-dd HH:mm} Fondo={fondoInicial:0.00} Declarado={efectivoDeclarado:0.00} Teorico={efectivoTeoricoTotal:0.00} Dif={diferencia:0.00}"
+            );
+
+            return cierreId;
+        }
+
+        // Histórico de cierres
+        public List<CierreCaja> BuscarCierres(
+            DateTime? desde,
+            DateTime? hasta,
+            string? cajaNumero,
+            string? usuarioCierre,
+            string? estado)
+        {
+            return _repo.ListarCierres(desde, hasta, cajaNumero, usuarioCierre, estado);
+        }
+
+        public DataTable ObtenerVentasPorCierre(long cierreId)
+        {
+            return _repo.ListarVentasPorCierre(cierreId);
+        }
+
+        public DataTable ObtenerPagosPorCierre(long cierreId)
+        {
+            // Buscamos el cierre para obtener caja y rango de fechas
+            var cierre = BuscarCierres(null, null, null, null, null)
+                .FirstOrDefault(c => c.CierreId == cierreId);
+
+            if (cierre == null)
+                return new DataTable();
+
+            return _repo.ListarPagosPorCajaYRango(
+                cierre.POS_CajaNumero,
+                cierre.FechaDesde,
+                cierre.FechaHasta
+            );
+        }
+
+        public DataTable ObtenerFondoPorCierre(long cierreId)
+        {
+            var cierre = BuscarCierres(null, null, null, null, null)
+                .FirstOrDefault(c => c.CierreId == cierreId);
+
+            if (cierre == null)
+                return new DataTable();
+
+            return _repo.ListarFondoPorCajaYRango(
+                cierre.POS_CajaNumero,
+                cierre.FechaDesde,
+                cierre.FechaHasta
+            );
+        }
+
+        public long GuardarCierre(CierreCajaDto dto)
+        {
+            // 1. Guardas el encabezado de cierre y obtienes el ID
+            long cierreId = _repo.InsertarCierre(dto);
+
+            // 2. Actualizas POS_Pago con ese cierre (CierreId + IncluidoEnCierre)
+            _repo.ActualizarPagosPosConCierreId(
+                cierreId,
+                dto.CajaNumero,
+                dto.FechaDesde,
+                dto.FechaHasta
+            );
+
+            // 2.1) Actualizar VentaCab con ese cierre
+            _repo.ActualizarVentasConCierreId(
+                cierreId,
+                dto.CajaNumero,
+                dto.FechaDesde,
+                dto.FechaHasta
+            );
+
+            // ✅ Auditoría
+            _audit.Log(
+                modulo: "CAJA",
+                accion: "CIERRE",
+                entidad: "CajaCierreCab",
+                entidadId: cierreId.ToString(),
+                detalle: $"Cierre (DTO). CajaNumero={dto.CajaNumero} Desde={dto.FechaDesde:yyyy-MM-dd HH:mm} Hasta={dto.FechaHasta:yyyy-MM-dd HH:mm}"
+            );
+
+            return cierreId;
+        }
+    }
+}
+﻿namespace Andloe.Logica;
+
+public class ConexionConfig
+{
+    public string DataSource { get; set; } = ".";
+    public string InitialCatalog { get; set; } = "AndloeV1.1";
+    public bool IntegratedSecurity { get; set; } = true;
+    public string? UserID { get; set; }
+    public string? Password { get; set; }
+    public bool Encrypt { get; set; } = false;
+    public bool TrustServerCertificate { get; set; } = true;
+
+    public string BuildConnectionString()
+    {
+        var parts = new List<string>
+        {
+            $"Data Source={DataSource}",
+            $"Initial Catalog={InitialCatalog}",
+            $"Integrated Security={(IntegratedSecurity ? "True" : "False")}",
+            $"Encrypt={(Encrypt ? "True" : "False")}",
+            $"TrustServerCertificate={(TrustServerCertificate ? "True" : "False")}"
+        };
+
+        if (!IntegratedSecurity)
+        {
+            parts.Add($"User ID={UserID ?? ""}");
+            parts.Add($"Password={Password ?? ""}");
+        }
+
+        return string.Join(";", parts);
+    }
+}
+﻿using System;
+using System.IO;
+using System.Security.Cryptography;
+using System.Text;
+
+namespace Andloe.Logica
+{
+    public static class ConfigManager
+    {
+        // ===============================
+        // RUTAS SEGURAS (AppData)
+        // ===============================
+        private static readonly string ConfigDir =
+            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Andloe");
+
+        private static readonly string ConfigFile =
+            Path.Combine(ConfigDir, "conexion.cfg");
+
+        // ===============================
+        // RUTA LEGACY (migración)
+        // ===============================
+        private const string LegacyDir = @"C:\Andloe";
+        private static readonly string LegacyFile =
+            Path.Combine(LegacyDir, "conexion.txt");
+
+        // ===============================
+        // SEGURIDAD
+        // ===============================
+        private const string PasswordPrefix = "dpapi:";
+        private static readonly byte[] Entropy = Encoding.UTF8.GetBytes("Andloe.Config.v1");
+
+        // ===============================
+        // API PUBLICA
+        // ===============================
+        public static bool ConfigExists()
+        {
+            MigrateLegacyIfNeeded();
+            return File.Exists(ConfigFile);
+        }
+
+        public static ConexionConfig Load()
+        {
+            MigrateLegacyIfNeeded();
+
+            var cfg = new ConexionConfig();
+            if (!File.Exists(ConfigFile))
+                return cfg;
+
+            foreach (var raw in File.ReadAllLines(ConfigFile))
+            {
+                var line = raw.Trim();
+                if (line.Length == 0 || line.StartsWith("#"))
+                    continue;
+
+                var idx = line.IndexOf('=');
+                if (idx <= 0)
+                    continue;
+
+                var key = line[..idx].Trim().ToLowerInvariant();
+                var val = line[(idx + 1)..].Trim();
+
+                switch (key)
+                {
+                    case "datasource": cfg.DataSource = val; break;
+                    case "initialcatalog": cfg.InitialCatalog = val; break;
+                    case "integratedsecurity": cfg.IntegratedSecurity = val.Equals("true", StringComparison.OrdinalIgnoreCase); break;
+                    case "userid": cfg.UserID = string.IsNullOrWhiteSpace(val) ? null : val; break;
+                    case "password": cfg.Password = DecryptPassword(val); break;
+                    case "encrypt": cfg.Encrypt = val.Equals("true", StringComparison.OrdinalIgnoreCase); break;
+                    case "trustservercertificate": cfg.TrustServerCertificate = val.Equals("true", StringComparison.OrdinalIgnoreCase); break;
+                }
+            }
+
+            return cfg;
+        }
+
+        public static void Save(ConexionConfig cfg)
+        {
+            Directory.CreateDirectory(ConfigDir);
+
+            var lines = new[]
+            {
+                "# Configuracion de conexion Andloe",
+                "# Password protegida con DPAPI (CurrentUser)",
+                $"DataSource={cfg.DataSource}",
+                $"InitialCatalog={cfg.InitialCatalog}",
+                $"IntegratedSecurity={(cfg.IntegratedSecurity ? "true" : "false")}",
+                $"UserID={cfg.UserID ?? ""}",
+                $"Password={EncryptPassword(cfg.Password)}",
+                $"Encrypt={(cfg.Encrypt ? "true" : "false")}",
+                $"TrustServerCertificate={(cfg.TrustServerCertificate ? "true" : "false")}"
+            };
+
+            File.WriteAllLines(ConfigFile, lines);
+        }
+
+        public static string GetConnectionString()
+        {
+            return Load().BuildConnectionString();
+        }
+
+        public static string GetConfigFilePath()
+        {
+            return ConfigFile;
+        }
+
+        // ===============================
+        // MIGRACION AUTOMATICA
+        // ===============================
+        private static void MigrateLegacyIfNeeded()
+        {
+            try
+            {
+                if (File.Exists(ConfigFile))
+                    return;
+
+                if (!File.Exists(LegacyFile))
+                    return;
+
+                var legacy = LoadLegacy(LegacyFile);
+                Save(legacy);
+
+                var bak = LegacyFile + ".migrated.bak";
+                if (!File.Exists(bak))
+                    File.Move(LegacyFile, bak);
+            }
+            catch
+            {
+                // No romper la app por config
+            }
+        }
+
+        private static ConexionConfig LoadLegacy(string file)
+        {
+            var cfg = new ConexionConfig();
+
+            foreach (var raw in File.ReadAllLines(file))
+            {
+                var line = raw.Trim();
+                if (line.Length == 0 || line.StartsWith("#"))
+                    continue;
+
+                var idx = line.IndexOf('=');
+                if (idx <= 0)
+                    continue;
+
+                var key = line[..idx].Trim().ToLowerInvariant();
+                var val = line[(idx + 1)..].Trim();
+
+                switch (key)
+                {
+                    case "datasource": cfg.DataSource = val; break;
+                    case "initialcatalog": cfg.InitialCatalog = val; break;
+                    case "integratedsecurity": cfg.IntegratedSecurity = val.Equals("true", StringComparison.OrdinalIgnoreCase); break;
+                    case "userid": cfg.UserID = val; break;
+                    case "password":
+                        try
+                        {
+                            cfg.Password = Encoding.UTF8.GetString(Convert.FromBase64String(val));
+                        }
+                        catch
+                        {
+                            cfg.Password = val;
+                        }
+                        break;
+                    case "encrypt": cfg.Encrypt = val.Equals("true", StringComparison.OrdinalIgnoreCase); break;
+                    case "trustservercertificate": cfg.TrustServerCertificate = val.Equals("true", StringComparison.OrdinalIgnoreCase); break;
+                }
+            }
+
+            return cfg;
+        }
+
+        // ===============================
+        // DPAPI
+        // ===============================
+        private static string EncryptPassword(string password)
+        {
+            if (string.IsNullOrEmpty(password))
+                return "";
+
+            var bytes = Encoding.UTF8.GetBytes(password);
+            var protectedBytes = ProtectedData.Protect(bytes, Entropy, DataProtectionScope.CurrentUser);
+            return PasswordPrefix + Convert.ToBase64String(protectedBytes);
+        }
+
+        private static string DecryptPassword(string stored)
+        {
+            if (string.IsNullOrWhiteSpace(stored))
+                return null;
+
+            if (stored.StartsWith(PasswordPrefix, StringComparison.OrdinalIgnoreCase))
+            {
+                try
+                {
+                    var protectedBytes = Convert.FromBase64String(stored.Substring(PasswordPrefix.Length));
+                    var bytes = ProtectedData.Unprotect(protectedBytes, Entropy, DataProtectionScope.CurrentUser);
+                    return Encoding.UTF8.GetString(bytes);
+                }
+                catch
+                {
+                    return null;
+                }
+            }
+
+            // fallback: base64 o texto plano
+            try
+            {
+                var bytes = Convert.FromBase64String(stored);
+                return Encoding.UTF8.GetString(bytes);
+            }
+            catch
+            {
+                return stored;
+            }
+        }
+    }
+}
+﻿using Andloe.Data;
+using System;
+using System.Globalization;
+
+namespace Andloe.Logica
+{
+    /// <summary>
+    /// Servicio estático para leer configuraciones (clave/valor) de uso general.
+    /// </summary>
+    public static class ConfigService
+    {
+        private static readonly SistemaConfigRepository _repo = new();
+
+        // =======================
+        //      LECTURAS
+        // =======================
+
+        public static string ClienteDefecto =>
+            _repo.GetValor("CLIENTE_DEFECTO") ?? "C-000001";
+
+        public static string MonedaDefecto =>
+            _repo.GetValor("MONEDA_DEFECTO") ?? "DOP";
+
+        public static int MedioPagoDefectoId
+        {
+            get
+            {
+                var txt = _repo.GetValor("MEDIO_PAGO_DEFECTO");
+                return int.TryParse(txt, out var id) ? id : 1;
+            }
+        }
+
+        public static decimal TasaItbis =>
+            _repo.GetNumero("TASA_ITBIS", 18m);
+
+        /// <summary>Límite global de descuento (%). Si no existe, devuelve 0.</summary>
+        public static decimal DescuentoMaxGlobal =>
+            _repo.GetNumero("DESCUENTO_MAX_GLOBAL", 0m);
+
+        /// <summary>Indica si el sistema permite aplicar descuentos en el POS.</summary>
+        public static bool DescuentoHabilitado
+        {
+            get
+            {
+                var v = _repo.GetValor("DESCUENTO_HABILITADO");
+                if (string.IsNullOrWhiteSpace(v)) return true; // por defecto: sí
+                return v.Equals("true", StringComparison.OrdinalIgnoreCase) || v == "1";
+            }
+        }
+
+        /// <summary>
+        /// Permitir vender con stock negativo (1 = sí, 0 = no).
+        /// </summary>
+        public static bool PermitirStockNegativo
+        {
+            get
+            {
+                var v = _repo.GetValor("PERMITIR_STOCK_NEGATIVO");
+                if (string.IsNullOrWhiteSpace(v)) return false;
+                return v == "1"
+                    || v.Equals("true", StringComparison.OrdinalIgnoreCase)
+                    || v.Equals("si", StringComparison.OrdinalIgnoreCase);
+            }
+        }
+
+        /// <summary>Almacén de ORIGEN por defecto para POS.</summary>
+        public static int AlmacenPosOrigenId
+        {
+            get
+            {
+                var txt = _repo.GetValor("ALMACEN_POS_ORIGEN_ID");
+                return int.TryParse(txt, out var id) ? id : 0;
+            }
+        }
+
+        /// <summary>Almacén de DESTINO por defecto para POS (0 = ninguno).</summary>
+        public static int AlmacenPosDestinoId
+        {
+            get
+            {
+                var txt = _repo.GetValor("ALMACEN_POS_DESTINO_ID");
+                return int.TryParse(txt, out var id) ? id : 0;
+            }
+        }
+
+        // =======================
+        //      ESCRITURAS
+        // =======================
+
+        public static void SetClienteDefecto(string codigo) =>
+            _repo.SetValor("CLIENTE_DEFECTO", codigo,
+                "Cliente por defecto", "POS", "admin");
+
+        public static void SetMonedaDefecto(string moneda) =>
+            _repo.SetValor("MONEDA_DEFECTO", moneda,
+                "Moneda por defecto", "POS", "admin");
+
+        public static void SetMedioPagoDefecto(int medioId) =>
+            _repo.SetValor("MEDIO_PAGO_DEFECTO", medioId.ToString(),
+                "Medio de pago por defecto", "POS", "admin");
+
+        public static void SetTasaItbis(decimal itbis) =>
+            _repo.SetValor("TASA_ITBIS", itbis.ToString("0.##", CultureInfo.InvariantCulture),
+                "Tasa ITBIS por defecto", "GENERAL", "admin");
+
+        public static void SetDescuentoMaxGlobal(decimal porciento) =>
+            _repo.SetValor("DESCUENTO_MAX_GLOBAL", porciento.ToString("0.##"),
+                "Descuento máximo total permitido en %", "POS", "admin");
+
+        public static void SetDescuentoHabilitado(bool habilitado) =>
+            _repo.SetValor("DESCUENTO_HABILITADO", habilitado ? "true" : "false",
+                "Habilitar o no descuentos en POS", "POS", "admin");
+    }
+
+    /// <summary>
+    /// Servicio instanciable para leer configuraciones numéricas / booleanas,
+    /// usado dentro de servicios como PosService.
+    /// </summary>
+    public class ConfigCalcService
+    {
+        private readonly SistemaConfigRepository _repo;
+
+        public ConfigCalcService(SistemaConfigRepository repo)
+        {
+            _repo = repo;
+        }
+
+        public decimal GetDecimal(string clave, decimal defaultValue = 0m)
+        {
+            var valor = _repo.GetValor(clave);
+            if (decimal.TryParse(valor, NumberStyles.Any, CultureInfo.InvariantCulture, out var dec))
+                return dec;
+
+            return defaultValue;
+        }
+
+        public bool GetBool(string clave, bool defaultValue = false)
+        {
+            var valor = _repo.GetValor(clave);
+            if (string.IsNullOrWhiteSpace(valor))
+                return defaultValue;
+
+            return valor.Equals("true", StringComparison.OrdinalIgnoreCase)
+                || valor.Equals("1");
+        }
+    }
+}
+﻿using Andloe.Data;
+using System;
+using System.Collections.Generic;
+using System.Linq;
+
+namespace Andloe.Logica
+{
+    public sealed class ContabilidadCatalogoCuentaService
+    {
+        private readonly ContabilidadCatalogoCuentaRepository _repo = new();
+
+        public List<CtaRow> Listar(string? filtro = null) => _repo.Listar(filtro);
+
+        public int Guardar(CtaRow c)
+        {
+            if (string.IsNullOrWhiteSpace(c.Codigo))
+                throw new InvalidOperationException("Código requerido.");
+            if (string.IsNullOrWhiteSpace(c.Descripcion))
+                throw new InvalidOperationException("Descripción requerida.");
+            if (string.IsNullOrWhiteSpace(c.Tipo))
+                throw new InvalidOperationException("Tipo requerido.");
+
+            c.Codigo = c.Codigo.Trim();
+            c.Descripcion = c.Descripcion.Trim();
+            c.Tipo = c.Tipo.Trim().ToUpperInvariant();
+            c.Estado = string.IsNullOrWhiteSpace(c.Estado) ? "ACTIVO" : c.Estado.Trim().ToUpperInvariant();
+
+            // Nivel: si tiene padre => padre.Nivel + 1
+            if (c.PadreId.HasValue)
+            {
+                var padre = _repo.Listar().FirstOrDefault(x => x.CuentaId == c.PadreId.Value);
+                if (padre == null) throw new InvalidOperationException("Cuenta padre inválida.");
+                c.Nivel = padre.Nivel + 1;
+            }
+            else
+            {
+                c.Nivel = 1;
+            }
+
+            // Unicidad de código
+            if (_repo.ExisteCodigo(c.Codigo, c.CuentaId == 0 ? null : c.CuentaId))
+                throw new InvalidOperationException($"Ya existe una cuenta con el código '{c.Codigo}'.");
+
+            if (c.CuentaId == 0)
+                return _repo.Insertar(c);
+
+            _repo.Actualizar(c);
+            return c.CuentaId;
+        }
+
+        public void Eliminar(int cuentaId)
+        {
+            if (_repo.TieneHijos(cuentaId))
+                throw new InvalidOperationException("No se puede eliminar: esta cuenta tiene hijos.");
+
+            _repo.Eliminar(cuentaId);
+        }
+
+        public void SetEstado(int cuentaId, bool activo)
+        {
+            _repo.SetEstado(cuentaId, activo ? "ACTIVO" : "INACTIVO");
+        }
+    }
+}
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using Andloe.Data;
+using Andloe.Entidad.CxC;
+
+namespace Andloe.Logica
+{
+    public sealed class CxCCobroService
+    {
+        private readonly CxCCobroRepository _repo = new();
+
+        public List<CxCCobroListadoDto> Listar(string? filtro = null, int top = 200)
+            => _repo.Listar(filtro, top);
+
+        public List<CxCClienteLookupDto> BuscarClientes(string? filtro, int top = 20)
+            => _repo.BuscarClientes(filtro, top);
+
+        public List<CxCCuentaDestinoDto> ListarCuentasDestino()
+            => _repo.ListarCuentasDestino();
+
+        public List<CxCCentroCostoDto> ListarCentrosCosto()
+        {
+            var sesion = SesionService.Current;
+            return _repo.ListarCentrosCosto(sesion.EmpresaId);
+        }
+
+        public List<CxCFacturaPendienteDto> ListarFacturasPendientes(int clienteId)
+        {
+            if (clienteId <= 0)
+                return new List<CxCFacturaPendienteDto>();
+
+            return _repo.ListarFacturasPendientes(clienteId);
+        }
+
+        public void AutoAplicar(List<CxCFacturaPendienteDto> facturas, decimal montoDisponible)
+        {
+            if (facturas == null || facturas.Count == 0)
+                return;
+
+            if (montoDisponible < 0)
+                montoDisponible = 0;
+
+            foreach (var f in facturas)
+            {
+                f.MontoRecibido = 0;
+                f.Retencion = 0;
+            }
+
+            foreach (var item in facturas
+                .OrderBy(x => x.FechaVencimiento ?? x.FechaDocumento)
+                .ThenBy(x => x.FacturaId))
+            {
+                if (montoDisponible <= 0)
+                    break;
+
+                var balance = Math.Round(item.BalancePendiente, 2);
+                if (balance <= 0)
+                    continue;
+
+                var aplicar = Math.Min(balance, montoDisponible);
+                aplicar = Math.Round(aplicar, 2);
+
+                item.MontoRecibido = aplicar;
+                montoDisponible = Math.Round(montoDisponible - aplicar, 2);
+            }
+        }
+
+        public CxCCobroCrearResultDto Crear(CxCCobroCrearDto dto)
+        {
+            Validar(dto);
+
+            var sesion = SesionService.Current;
+            dto.EmpresaId = sesion.EmpresaId;
+            dto.SucursalId = sesion.SucursalId;
+
+            return _repo.Crear(dto, sesion.Usuario);
+        }
+
+        private static void Validar(CxCCobroCrearDto dto)
+        {
+            if (dto == null)
+                throw new ArgumentNullException(nameof(dto));
+
+            if (dto.ClienteId.GetValueOrDefault() <= 0)
+                throw new InvalidOperationException("Debes seleccionar un cliente.");
+
+            if (string.IsNullOrWhiteSpace(dto.ClienteNombre))
+                throw new InvalidOperationException("El nombre del cliente es obligatorio.");
+
+            if (string.IsNullOrWhiteSpace(dto.MonedaCodigo))
+                throw new InvalidOperationException("La moneda es obligatoria.");
+
+            if (string.IsNullOrWhiteSpace(dto.TipoMedio))
+                throw new InvalidOperationException("La forma de pago es obligatoria.");
+
+            if (dto.MontoMedio <= 0)
+                throw new InvalidOperationException("El monto del pago debe ser mayor que cero.");
+
+            if (dto.Aplicaciones == null || dto.Aplicaciones.Count == 0)
+                throw new InvalidOperationException("Debes aplicar el pago a por lo menos una factura.");
+
+            dto.Aplicaciones = dto.Aplicaciones
+                .Where(x => x != null && x.FacturaId > 0 && Math.Round(x.MontoAplicado, 2) > 0)
+                .Select(x =>
+                {
+                    x.MontoAplicado = Math.Round(x.MontoAplicado, 2);
+                    x.Retencion = Math.Round(x.Retencion, 2);
+                    return x;
+                })
+                .ToList();
+
+            if (dto.Aplicaciones.Count == 0)
+                throw new InvalidOperationException("No hay facturas v�lidas con monto aplicado.");
+
+            var totalAplicado = Math.Round(dto.Aplicaciones.Sum(x => x.MontoAplicado), 2);
+            var montoMedio = Math.Round(dto.MontoMedio, 2);
+
+            if (totalAplicado <= 0)
+                throw new InvalidOperationException("El total aplicado debe ser mayor que cero.");
+
+            if (totalAplicado != montoMedio)
+                throw new InvalidOperationException("El total aplicado debe coincidir con el monto del pago.");
+
+            dto.TipoMedio = dto.TipoMedio.Trim().ToUpperInvariant();
+            dto.MontoMedio = montoMedio;
+            dto.TasaCambio = dto.TasaCambio <= 0 ? 1m : dto.TasaCambio;
+        }
+    }
+}﻿using System;
+using System.Collections.Generic;
+using System.Linq;
+using Andloe.Data;
+using Andloe.Entidad.CxC;
+
+namespace Andloe.Logica
+{
+    public sealed class CxCEstadoCuentaService
+    {
+        private readonly CxCEstadoCuentaRepository _repo = new();
+        private readonly CxCCobroService _clienteHelper = new();
+
+        public List<CxCClienteLookupDto> BuscarClientes(string? filtro, int top = 20)
+            => _clienteHelper.BuscarClientes(filtro, top);
+
+        public List<CxCEstadoCuentaDto> ListarEstadoCuentaCliente(int clienteId, DateTime? desde = null, DateTime? hasta = null)
+        {
+            if (clienteId <= 0)
+                return new List<CxCEstadoCuentaDto>();
+
+            return _repo.ListarEstadoCuentaCliente(clienteId, desde, hasta);
+        }
+
+        public (decimal totalFacturado, decimal totalCobrado, decimal balance) CalcularTotales(List<CxCEstadoCuentaDto> items)
+        {
+            items ??= new List<CxCEstadoCuentaDto>();
+
+            decimal totalFacturado = items.Sum(x => x.Debe);
+            decimal totalCobrado = items.Sum(x => x.Haber);
+            decimal balance = totalFacturado - totalCobrado;
+
+            return (totalFacturado, totalCobrado, balance);
+        }
+    }
+}﻿using System.Data;
+using Andloe.Data;
+
+namespace Andloe.Logica;
+
+public class DashboardService
+{
+    public (int Total, int Activos, int Bloqueados, DateTime? UltimoAcceso) GetUsuariosResumen()
+    {
+        // funciona con la vista; si no existiera, cae al SELECT directo
+        try
+        {
+            var dt = SqlHelper.ExecuteDataTable("SELECT * FROM dbo.vw_Dashboard_Usuarios;");
+            if (dt.Rows.Count == 0) return (0, 0, 0, null);
+            var r = dt.Rows[0];
+            return (Convert.ToInt32(r["Total"]),
+                    Convert.ToInt32(r["Activos"]),
+                    Convert.ToInt32(r["Bloqueados"]),
+                    r["UltimoAcceso"] == DBNull.Value ? (DateTime?)null : Convert.ToDateTime(r["UltimoAcceso"]));
+        }
+        catch
+        {
+            var total = SqlHelper.ExecuteScalar<int>("SELECT COUNT(*) FROM dbo.Usuario;");
+            var activos = SqlHelper.ExecuteScalar<int>("SELECT COUNT(*) FROM dbo.Usuario WHERE Estado = N'Activo';");
+            var bloqueados = SqlHelper.ExecuteScalar<int>("SELECT COUNT(*) FROM dbo.Usuario WHERE Estado = N'Bloqueado';");
+            var ultimo = SqlHelper.ExecuteScalar<DateTime?>("SELECT MAX(UltimoAcceso) FROM dbo.Usuario;");
+            return (total, activos, bloqueados, ultimo);
+        }
+    }
+
+    public DataTable GetUsuariosPorRol()
+        => SqlHelper.ExecuteDataTable("SELECT Rol, Cantidad FROM dbo.vw_Dashboard_UsuariosPorRol ORDER BY Cantidad DESC;");
+
+    // Placeholders para POS (ya funcionan aunque devuelvan ceros)
+    public DataTable GetVentas7Dias()
+        => SqlHelper.ExecuteDataTable("SELECT Fecha, Monto FROM dbo.vw_Dashboard_Ventas7Dias ORDER BY Fecha;");
+
+    public DataTable GetVentasPorCategoria()
+        => SqlHelper.ExecuteDataTable("SELECT Categoria, Monto FROM dbo.vw_Dashboard_VentasPorCategoria ORDER BY Monto DESC;");
+}
+﻿#nullable enable
+using System;
+using System.Data;
+using Microsoft.Extensions.Logging;
+using Andloe.Data;
+
+namespace Andloe.Logica.Facturacion
+{
+    public sealed class FacturaReportService
+    {
+        private readonly ReporteService _reporteService;
+        private readonly ReporteFacturacionRepository _reporteFacturacionRepo;
+        private readonly IPrintPreviewService _preview;
+        private readonly ILogger<FacturaReportService> _logger;
+
+        public FacturaReportService(
+            ReporteService reporteService,
+            ReporteFacturacionRepository reporteFacturacionRepo,
+            IPrintPreviewService preview,
+            ILogger<FacturaReportService> logger)
+        {
+            _reporteService = reporteService ?? throw new ArgumentNullException(nameof(reporteService));
+            _reporteFacturacionRepo = reporteFacturacionRepo ?? throw new ArgumentNullException(nameof(reporteFacturacionRepo));
+            _preview = preview ?? throw new ArgumentNullException(nameof(preview));
+            _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        }
+
+        public void ImprimirFactura(string modulo, string codigoReporte, int facturaId)
+        {
+            if (string.IsNullOrWhiteSpace(modulo)) throw new ArgumentException("módulo requerido", nameof(modulo));
+            if (facturaId <= 0) throw new ArgumentException("facturaId inválido", nameof(facturaId));
+
+            var mod = modulo.Trim();
+
+            // ✅ si viene vacío o viene "FAC/COT/PF", lo resolvemos por TipoDocumento desde DB
+            var cod = ResolveCodigoReporte(codigoReporte, facturaId);
+
+            // 1) Resolver reporte
+            var rep = _reporteService.ObtenerReporteParaImprimir(mod, cod);
+            if (rep == null)
+                throw new InvalidOperationException($"No se encontró definición de reporte: Modulo={mod}, Codigo={cod}.");
+
+            _logger.LogInformation("ImprimirFactura => Modulo={Modulo}, Codigo={Codigo}, Motor={Motor}, Ruta={Ruta}",
+                mod, cod, rep.Motor, rep.RutaArchivo);
+
+            if (!string.Equals(rep.Motor, "RDLC", StringComparison.OrdinalIgnoreCase))
+                throw new InvalidOperationException($"Motor no soportado: {rep.Motor}. Este servicio solo imprime RDLC.");
+
+            // 2) Dataset (siempre con @FacturaId)
+            var ds = ObtenerDatasetReporte(cod, facturaId);
+
+            // 3) Validar / normalizar (Cab/Det/Totales + 1 fila en Totales)
+            NormalizarDataset(ds);
+
+            // 4) Debug útil
+            _logger.LogInformation("RDLC => CabRows={CabRows} DetRows={DetRows} TotRows={TotRows}",
+                ds.Tables["Cab"]!.Rows.Count,
+                ds.Tables["Det"]!.Rows.Count,
+                ds.Tables["Totales"]!.Rows.Count);
+
+            // 5) Preview
+            _preview.Preview(
+                rep.RutaArchivo,
+                ds.Tables["Cab"]!,
+                ds.Tables["Det"]!,
+                ds.Tables["Totales"]!,
+                string.IsNullOrWhiteSpace(rep.Nombre) ? "Imprimir" : rep.Nombre
+            );
+        }
+
+        // =========================================================
+        // ✅ RESOLVER CÓDIGO (FACTURA_RI / COTIZACION_RI / PROFORMA_RI)
+        // =========================================================
+        private string ResolveCodigoReporte(string? codigoReporte, int facturaId)
+        {
+            var cod = (codigoReporte ?? "").Trim().ToUpperInvariant();
+
+            // Si ya viene en el formato correcto, no inventamos nada
+            if (cod is "FACTURA_RI" or "COTIZACION_RI" or "PROFORMA_RI")
+                return cod;
+
+            // Soporta llaves cortas: FAC/COT/PF
+            if (cod is "FAC") return "FACTURA_RI";
+            if (cod is "COT") return "COTIZACION_RI";
+            if (cod is "PF") return "PROFORMA_RI";
+
+            // Si no vino nada (o vino raro), lo resolvemos leyendo TipoDocumento del registro
+            if (string.IsNullOrWhiteSpace(cod))
+            {
+                var tipo = GetTipoDocumentoFromFacturaId(facturaId);
+
+                return tipo switch
+                {
+                    "FAC" => "FACTURA_RI",
+                    "COT" => "COTIZACION_RI",
+                    "PF" => "PROFORMA_RI",
+                    _ => "FACTURA_RI" // fallback seguro
+                };
+            }
+
+            // Si vino algo no esperado, lo dejamos caer con error claro
+            throw new InvalidOperationException($"Código de reporte no soportado: '{cod}'. Usa FACTURA_RI / COTIZACION_RI / PROFORMA_RI o FAC/COT/PF.");
+        }
+
+        // =========================================================
+        // ✅ Obtiene TipoDocumento (FAC/COT/PF) usando FacturaId
+        // =========================================================
+        private string GetTipoDocumentoFromFacturaId(int facturaId)
+        {
+            // Usamos el SP de factura (ya existe) para leer Cab y sacar TipoDocumento sin crear SQL nuevo.
+            var ds = _reporteFacturacionRepo.GetFacturaRI(facturaId);
+
+            if (ds.Tables.Contains("Cab") && ds.Tables["Cab"] != null && ds.Tables["Cab"]!.Rows.Count > 0)
+            {
+                var row = ds.Tables["Cab"]!.Rows[0];
+
+                // Nombre de columna según tu SP: f.TipoDocumento
+                var tipoObj = row.Table.Columns.Contains("TipoDocumento") ? row["TipoDocumento"] : null;
+
+                var tipo = (tipoObj == null || tipoObj == DBNull.Value)
+                    ? ""
+                    : Convert.ToString(tipoObj)?.Trim().ToUpperInvariant() ?? "";
+
+                return tipo;
+            }
+
+            return "";
+        }
+
+        // =========================================================
+        // DATASET BUILDER
+        // =========================================================
+        private DataSet ObtenerDatasetReporte(string codigoReporte, int facturaId)
+        {
+            var cod = (codigoReporte ?? "").Trim().ToUpperInvariant();
+
+            return cod switch
+            {
+                // ✅ YA FUNCIONA → NO SE TOCA
+                "FACTURA_RI" => _reporteFacturacionRepo.GetFacturaRI(facturaId),
+
+                // ✅ NUEVOS (mismo FacturaId / mismo parámetro @FacturaId)
+                "COTIZACION_RI" => _reporteFacturacionRepo.GetCotizacionRI(facturaId),
+                "PROFORMA_RI" => _reporteFacturacionRepo.GetProformaRI(facturaId),
+
+                _ => throw new InvalidOperationException($"No existe DataSet builder para el reporte: {cod}")
+            };
+        }
+
+        // =========================================================
+        // NORMALIZACIÓN BASE
+        // =========================================================
+        private static void NormalizarDataset(DataSet ds)
+        {
+            if (ds == null) throw new InvalidOperationException("El repositorio devolvió DataSet null.");
+
+            if (!ds.Tables.Contains("Cab") || ds.Tables["Cab"] == null || ds.Tables["Cab"]!.Rows.Count == 0)
+                throw new InvalidOperationException("El DataSet no devolvió Cab (o vino vacío).");
+
+            if (!ds.Tables.Contains("Det") || ds.Tables["Det"] == null)
+                ds.Tables.Add(new DataTable("Det"));
+
+            if (!ds.Tables.Contains("Totales") || ds.Tables["Totales"] == null)
+                ds.Tables.Add(CreateTotalesFallback());
+
+            // ✅ fuerza nombres correctos
+            ds.Tables["Cab"]!.TableName = "Cab";
+            ds.Tables["Det"]!.TableName = "Det";
+            ds.Tables["Totales"]!.TableName = "Totales";
+
+            EnsureTotalesHasAtLeastOneRow(ds.Tables["Totales"]!);
+        }
+
+        private static DataTable CreateTotalesFallback()
+        {
+            var t = new DataTable("Totales");
+            t.Columns.Add("TotalCantidad", typeof(decimal));
+            t.Columns.Add("Bruto", typeof(decimal));
+            t.Columns.Add("Descuento", typeof(decimal));
+            t.Columns.Add("ITBIS", typeof(decimal));
+            t.Columns.Add("Impuesto", typeof(decimal));
+            t.Columns.Add("TotalLineas", typeof(decimal));
+            t.Rows.Add(0m, 0m, 0m, 0m, 0m, 0m);
+            return t;
+        }
+
+        private static void EnsureTotalesHasAtLeastOneRow(DataTable totales)
+        {
+            if (totales.TableName != "Totales") totales.TableName = "Totales";
+
+            EnsureDecimalColumn(totales, "TotalCantidad");
+            EnsureDecimalColumn(totales, "Bruto");
+            EnsureDecimalColumn(totales, "Descuento");
+            EnsureDecimalColumn(totales, "ITBIS");
+            EnsureDecimalColumn(totales, "Impuesto");
+            EnsureDecimalColumn(totales, "TotalLineas");
+
+            if (totales.Rows.Count == 0)
+                totales.Rows.Add(0m, 0m, 0m, 0m, 0m, 0m);
+        }
+
+        private static void EnsureDecimalColumn(DataTable t, string name)
+        {
+            if (!t.Columns.Contains(name))
+                t.Columns.Add(name, typeof(decimal));
+        }
+    }
+}
+#nullable restore
+﻿using Andloe.Data;
+using Andloe.Entidad;
+using Microsoft.Data.SqlClient;
+using System;
+using System.Collections.Generic;
+using System.Data;
+
+namespace Andloe.Logica
+{
+    /// <summary>
+    /// Servicio central para registrar entradas/salidas de inventario
+    /// y consultar Kardex de un producto.
+    /// </summary>
+    public class InventarioService
+    {
+        private readonly InvMovimientoCabRepository _cabRepo = new();
+        private readonly InvMovimientoLinRepository _linRepo = new();
+        private readonly ProductoRepository _prodRepo = new();
+
+        /// <summary>
+        /// Registra una ENTRADA de inventario.
+        /// Ej: compra, ajuste positivo, devolución de cliente, etc.
+        /// </summary>
+        /// <param name="usuario">Usuario que realiza el movimiento.</param>
+        /// <param name="almacenId">Almacén donde entra la mercancía.</param>
+        /// <param name="origen">Texto de origen (COMPRA, AJUSTE, DEVOLUCION, etc.).</param>
+        /// <param name="origenId">Id del documento origen (opcional).</param>
+        /// <param name="observacion">Descripción libre.</param>
+        /// <param name="lineas">
+        /// Lista de tuplas (ProductoCodigo, Cantidad, CostoUnitario).
+        /// </param>
+        public long RegistrarEntrada(
+            string usuario,
+            int almacenId,
+            string origen,
+            long? origenId,
+            string observacion,
+            IEnumerable<(string ProductoCodigo, decimal Cantidad, decimal CostoUnitario)> lineas)
+        {
+            if (almacenId <= 0)
+                throw new ArgumentException("Debe especificar un almacén válido para la entrada.", nameof(almacenId));
+
+            if (lineas == null)
+                throw new ArgumentNullException(nameof(lineas));
+
+            var lista = new List<(string ProductoCodigo, decimal Cantidad, decimal CostoUnitario)>(lineas);
+            if (lista.Count == 0)
+                throw new InvalidOperationException("No hay líneas de inventario para registrar.");
+
+            var ahora = DateTime.Now;
+
+            using var cn = Db.GetOpenConnection();
+            using var tx = cn.BeginTransaction(IsolationLevel.ReadCommitted);
+
+            try
+            {
+                var cab = new InvMovimientoCab
+                {
+                    Fecha = ahora,
+                    Tipo = "ENTRADA",
+                    Origen = origen,
+                    OrigenId = origenId,
+                    AlmacenIdOrigen = null,
+                    AlmacenIdDestino = almacenId,
+                    Usuario = usuario,
+                    Observacion = string.IsNullOrWhiteSpace(observacion) ? "Entrada inventario" : observacion,
+                    Estado = "APLICADO"
+                };
+
+                var movId = _cabRepo.InsertCabecera(cab, tx);
+
+                int linea = 1;
+                foreach (var l in lista)
+                {
+                    if (l.Cantidad <= 0) continue;
+
+                    // Actualizamos stock total del producto
+                    _prodRepo.SumarStock(l.ProductoCodigo, l.Cantidad, cn, tx);
+
+                    var lin = new InvMovimientoLin
+                    {
+                        InvMovId = movId,
+                        Linea = linea,
+                        ProductoCodigo = l.ProductoCodigo,
+                        Cantidad = l.Cantidad,
+                        CostoUnitario = l.CostoUnitario
+                    };
+
+                    _linRepo.InsertLinea(lin, tx);
+                    linea++;
+                }
+
+                tx.Commit();
+                return movId;
+            }
+            catch
+            {
+                tx.Rollback();
+                throw;
+            }
+        }
+
+        /// <summary>
+        /// Registra una SALIDA de inventario.
+        /// Ej: ajuste negativo, consumo interno, merma, etc.
+        /// </summary>
+        public long RegistrarSalida(
+            string usuario,
+            int almacenId,
+            string origen,
+            long? origenId,
+            string observacion,
+            IEnumerable<(string ProductoCodigo, decimal Cantidad, decimal CostoUnitario)> lineas,
+            bool permitirStockNegativo = false)
+        {
+            if (almacenId <= 0)
+                throw new ArgumentException("Debe especificar un almacén válido para la salida.", nameof(almacenId));
+
+            if (lineas == null)
+                throw new ArgumentNullException(nameof(lineas));
+
+            var lista = new List<(string ProductoCodigo, decimal Cantidad, decimal CostoUnitario)>(lineas);
+            if (lista.Count == 0)
+                throw new InvalidOperationException("No hay líneas de inventario para registrar.");
+
+            var ahora = DateTime.Now;
+
+            using var cn = Db.GetOpenConnection();
+            using var tx = cn.BeginTransaction(IsolationLevel.ReadCommitted);
+
+            try
+            {
+                var cab = new InvMovimientoCab
+                {
+                    Fecha = ahora,
+                    Tipo = "SALIDA",
+                    Origen = origen,
+                    OrigenId = origenId,
+                    AlmacenIdOrigen = almacenId,
+                    AlmacenIdDestino = null,
+                    Usuario = usuario,
+                    Observacion = string.IsNullOrWhiteSpace(observacion) ? "Salida inventario" : observacion,
+                    Estado = "APLICADO"
+                };
+
+                var movId = _cabRepo.InsertCabecera(cab, tx);
+
+                int linea = 1;
+                foreach (var l in lista)
+                {
+                    if (l.Cantidad <= 0) continue;
+
+                    // Descontamos stock (según flag permitirStockNegativo)
+                    _prodRepo.RestarStock(
+                        l.ProductoCodigo,
+                        l.Cantidad,
+                        cn,
+                        tx,
+                        permitirNegativo: permitirStockNegativo);
+
+                    var lin = new InvMovimientoLin
+                    {
+                        InvMovId = movId,
+                        Linea = linea,
+                        ProductoCodigo = l.ProductoCodigo,
+                        Cantidad = l.Cantidad,
+                        CostoUnitario = l.CostoUnitario
+                    };
+
+                    _linRepo.InsertLinea(lin, tx);
+                    linea++;
+                }
+
+                tx.Commit();
+                return movId;
+            }
+            catch
+            {
+                tx.Rollback();
+                throw;
+            }
+        }
+
+        /// <summary>
+        /// Registra un TRASLADO entre almacenes.
+        /// Suma en destino, resta en origen.
+        /// </summary>
+        public long RegistrarTraslado(
+            string usuario,
+            int almacenOrigenId,
+            int almacenDestinoId,
+            string origen,
+            long? origenId,
+            string observacion,
+            IEnumerable<(string ProductoCodigo, decimal Cantidad, decimal CostoUnitario)> lineas,
+            bool permitirStockNegativo = false)
+        {
+            if (almacenOrigenId <= 0 || almacenDestinoId <= 0)
+                throw new ArgumentException("Debe especificar almacenes válidos para traslado.");
+
+            if (almacenOrigenId == almacenDestinoId)
+                throw new ArgumentException("El almacén origen y destino no pueden ser el mismo.");
+
+            if (lineas == null)
+                throw new ArgumentNullException(nameof(lineas));
+
+            var lista = new List<(string ProductoCodigo, decimal Cantidad, decimal CostoUnitario)>(lineas);
+            if (lista.Count == 0)
+                throw new InvalidOperationException("No hay líneas de inventario para registrar.");
+
+            var ahora = DateTime.Now;
+
+            using var cn = Db.GetOpenConnection();
+            using var tx = cn.BeginTransaction(IsolationLevel.ReadCommitted);
+
+            try
+            {
+                var cab = new InvMovimientoCab
+                {
+                    Fecha = ahora,
+                    Tipo = "TRASLADO",
+                    Origen = origen,
+                    OrigenId = origenId,
+                    AlmacenIdOrigen = almacenOrigenId,
+                    AlmacenIdDestino = almacenDestinoId,
+                    Usuario = usuario,
+                    Observacion = string.IsNullOrWhiteSpace(observacion) ? "Traslado de inventario" : observacion,
+                    Estado = "APLICADO"
+                };
+
+                var movId = _cabRepo.InsertCabecera(cab, tx);
+
+                int linea = 1;
+                foreach (var l in lista)
+                {
+                    if (l.Cantidad <= 0) continue;
+
+                    // Restamos del origen
+                    _prodRepo.RestarStock(
+                        l.ProductoCodigo,
+                        l.Cantidad,
+                        cn,
+                        tx,
+                        permitirNegativo: permitirStockNegativo);
+
+                    // Sumamos al destino (a nivel total de producto)
+                    _prodRepo.SumarStock(l.ProductoCodigo, l.Cantidad, cn, tx);
+
+                    var lin = new InvMovimientoLin
+                    {
+                        InvMovId = movId,
+                        Linea = linea,
+                        ProductoCodigo = l.ProductoCodigo,
+                        Cantidad = l.Cantidad,
+                        CostoUnitario = l.CostoUnitario
+                    };
+
+                    _linRepo.InsertLinea(lin, tx);
+                    linea++;
+                }
+
+                tx.Commit();
+                return movId;
+            }
+            catch
+            {
+                tx.Rollback();
+                throw;
+            }
+        }
+    }
+}
+﻿#nullable enable
+using System.Data;
+
+namespace Andloe.Logica
+{
+    /// <summary>
+    /// Contrato de vista previa de impresión (UI). La lógica solo conoce este contrato.
+    /// </summary>
+    public interface IPrintPreviewService
+    {
+        void Preview(
+            string rdlcRelativePath,
+            DataTable cab,
+            DataTable det,
+            DataTable totales,
+            string windowTitle
+        );
+    }
+
+
+}
+#nullable restore
+﻿using System;
+using System.Collections.Generic;
+using System.Data;
+using Andloe.Data;
+using Andloe.Entidad;
+using Microsoft.Data.SqlClient;
+
+namespace Andloe.Logica
+{
+    public class KardexService
+    {
+        /// <summary>
+        /// Devuelve existencia inicial (antes de fechaDesde) + lista de movimientos
+        /// entre fechaDesde y fechaHasta, con existencia acumulada.
+        /// </summary>
+        public (decimal ExistenciaInicial, List<KardexMovimientoDto> Movimientos) ObtenerKardex(
+            string productoCodigo,
+            int? almacenId,
+            DateTime fechaDesde,
+            DateTime fechaHasta)
+        {
+            if (string.IsNullOrWhiteSpace(productoCodigo))
+                throw new ArgumentException("Producto requerido.", nameof(productoCodigo));
+
+            if (fechaHasta < fechaDesde)
+                throw new ArgumentException("FechaHasta no puede ser menor que FechaDesde.");
+
+            using var cn = Db.GetOpenConnection();
+
+            // ================= EXISTENCIA INICIAL (antes de fechaDesde) =================
+            decimal existenciaInicial;
+            using (var cmdIni = new SqlCommand(@"
+SELECT ISNULL(SUM(
+           CASE 
+               WHEN c.Tipo = 'ENTRADA' THEN l.Cantidad
+               WHEN c.Tipo = 'SALIDA'  THEN -l.Cantidad
+               ELSE 0
+           END), 0)
+FROM dbo.InvMovimientoCab c
+JOIN dbo.InvMovimientoLin l ON l.InvMovId = c.InvMovId
+WHERE l.ProductoCodigo = @Prod
+  AND c.Fecha < @Desde
+  AND (@Alm IS NULL OR c.AlmacenIdOrigen = @Alm OR c.AlmacenIdDestino = @Alm);", cn))
+            {
+                cmdIni.Parameters.Add("@Prod", SqlDbType.VarChar, 20).Value = productoCodigo;
+                cmdIni.Parameters.Add("@Desde", SqlDbType.DateTime).Value = fechaDesde;
+                cmdIni.Parameters.Add("@Alm", SqlDbType.Int).Value = (object?)almacenId ?? DBNull.Value;
+
+                var val = cmdIni.ExecuteScalar();
+                existenciaInicial = (val == null || val == DBNull.Value)
+                    ? 0m
+                    : Convert.ToDecimal(val);
+            }
+
+            var movimientos = new List<KardexMovimientoDto>();
+
+            // ================= MOVIMIENTOS ENTRE DESDE / HASTA =================
+            using (var cmd = new SqlCommand(@"
+SELECT
+    c.Fecha,
+    c.Tipo,
+    c.Origen,
+    c.OrigenId,
+    ISNULL(a.Nombre, '') AS AlmacenNombre,
+    l.Cantidad
+FROM dbo.InvMovimientoCab c
+JOIN dbo.InvMovimientoLin l ON l.InvMovId = c.InvMovId
+LEFT JOIN dbo.Almacen a ON a.AlmacenId = ISNULL(c.AlmacenIdDestino, c.AlmacenIdOrigen)
+WHERE l.ProductoCodigo = @Prod
+  AND c.Fecha >= @Desde
+  AND c.Fecha < DATEADD(day, 1, @Hasta)
+  AND (@Alm IS NULL OR c.AlmacenIdOrigen = @Alm OR c.AlmacenIdDestino = @Alm)
+ORDER BY c.Fecha, c.InvMovId, l.Linea;", cn))
+            {
+                cmd.Parameters.Add("@Prod", SqlDbType.VarChar, 20).Value = productoCodigo;
+                cmd.Parameters.Add("@Desde", SqlDbType.DateTime).Value = fechaDesde;
+                cmd.Parameters.Add("@Hasta", SqlDbType.DateTime).Value = fechaHasta;
+                cmd.Parameters.Add("@Alm", SqlDbType.Int).Value = (object?)almacenId ?? DBNull.Value;
+
+                using var rd = cmd.ExecuteReader();
+
+                var existencia = existenciaInicial;
+
+                while (rd.Read())
+                {
+                    var fecha = rd.GetDateTime(0);
+                    var tipo = rd.IsDBNull(1) ? "" : rd.GetString(1);
+                    var origen = rd.IsDBNull(2) ? "" : rd.GetString(2);
+                    var origenIdObj = rd.IsDBNull(3) ? null : rd.GetValue(3);
+                    var almacenNombre = rd.IsDBNull(4) ? "" : rd.GetString(4);
+                    var cantidad = rd.IsDBNull(5) ? 0m : rd.GetDecimal(5);
+
+                    decimal entrada = 0m;
+                    decimal salida = 0m;
+
+                    // Ajusta estos códigos de Tipo según tu diseño real:
+                    if (string.Equals(tipo, "ENTRADA", StringComparison.OrdinalIgnoreCase))
+                    {
+                        entrada = cantidad;
+                    }
+                    else if (string.Equals(tipo, "SALIDA", StringComparison.OrdinalIgnoreCase))
+                    {
+                        salida = cantidad;
+                    }
+                    else
+                    {
+                        // Otros tipos (si tienes COMPRA, AJUSTE+, AJUSTE-, etc.)
+                        // Por defecto lo tratamos como entrada positiva.
+                        if (cantidad > 0)
+                            entrada = cantidad;
+                    }
+
+                    existencia += entrada - salida;
+
+                    movimientos.Add(new KardexMovimientoDto
+                    {
+                        Fecha = fecha,
+                        Tipo = tipo,
+                        Origen = origen,
+                        NumeroDocumento = origenIdObj?.ToString() ?? "",
+                        Almacen = almacenNombre,
+                        Entrada = entrada,
+                        Salida = salida,
+                        Existencia = existencia
+                    });
+                }
+            }
+
+            return (existenciaInicial, movimientos);
+        }
+    }
+}
+﻿using System;
+using System.Collections.Generic;
+using System.Data;
+using Andloe.Data;
+using Andloe.Entidad;
+using Microsoft.Data.SqlClient;
+
+namespace Andloe.Logica
+{
+    public class MovimientoInventarioService
+    {
+        private readonly InvMovimientoCabRepository _cabRepo = new();
+        private readonly InvMovimientoLinRepository _linRepo = new();
+        private readonly ProductoRepository _productoRepo = new();
+        private readonly AuditoriaService _audit = new();
+
+        /// <summary>
+        /// Crea un movimiento de inventario de tipo ENTRADA o SALIDA
+        /// y actualiza el stock del producto.
+        /// </summary>
+        public int CrearMovimiento(
+            DateTime fecha,
+            string tipo,
+            int almacenIdOrigen,
+            int? almacenIdDestino,
+            string usuario,
+            string? observacion,
+            List<ItemMovimientoDto> lineas)
+        {
+            if (string.IsNullOrWhiteSpace(usuario))
+                throw new InvalidOperationException("Usuario requerido para registrar movimiento.");
+
+            if (lineas == null || lineas.Count == 0)
+                throw new InvalidOperationException("Debe agregar al menos una línea.");
+
+            tipo = (tipo ?? "").Trim().ToUpperInvariant();
+            if (tipo != "ENTRADA" && tipo != "SALIDA")
+                throw new ArgumentException("Tipo inválido. Use ENTRADA o SALIDA.", nameof(tipo));
+
+            using var cn = Db.GetOpenConnection();
+            using var tx = cn.BeginTransaction(IsolationLevel.ReadCommitted);
+
+            long invMovId = 0;
+
+            try
+            {
+                var cab = new InvMovimientoCab
+                {
+                    Fecha = fecha,
+                    Tipo = tipo,
+                    Origen = "MANUAL",
+                    OrigenId = null,
+                    AlmacenIdOrigen = almacenIdOrigen,
+                    AlmacenIdDestino = almacenIdDestino,
+                    Usuario = usuario,
+                    Observacion = observacion ?? "",
+                    Estado = "APLICADO",
+                };
+
+                invMovId = _cabRepo.InsertCabecera(cab, tx);
+
+                bool permitirNegativo = ConfigService.PermitirStockNegativo;
+                int linea = 1;
+
+                foreach (var it in lineas)
+                {
+                    if (it.Cantidad <= 0)
+                        throw new InvalidOperationException($"Cantidad inválida en {it.ProductoCodigo}.");
+
+                    var lin = new InvMovimientoLin
+                    {
+                        InvMovId = invMovId,
+                        Linea = linea,
+                        ProductoCodigo = it.ProductoCodigo,
+                        Cantidad = it.Cantidad,
+                        CostoUnitario = it.CostoUnitario,
+                        Usuario = usuario
+                    };
+
+                    _linRepo.InsertLinea(lin, tx);
+
+                    if (tipo == "ENTRADA")
+                        _productoRepo.SumarStock(it.ProductoCodigo, it.Cantidad, cn, tx);
+                    else
+                        _productoRepo.RestarStock(it.ProductoCodigo, it.Cantidad, cn, tx, permitirNegativo);
+
+                    linea++;
+                }
+
+                tx.Commit();
+
+                _audit.Log(
+                    modulo: "INVENTARIO",
+                    accion: "MOV_MANUAL",
+                    entidad: "InvMovimientoCab",
+                    entidadId: invMovId.ToString(),
+                    detalle: $"Movimiento manual {tipo}. Lineas={lineas.Count}"
+                );
+
+                return (int)invMovId;
+            }
+            catch
+            {
+                tx.Rollback();
+                throw;
+            }
+        }
+
+        /// <summary>
+        /// Revierte (deshace) un movimiento MANUAL aplicado.
+        /// Crea un movimiento espejo (Tipo contrario) y ajusta stock.
+        /// </summary>
+        public long ReversarMovimientoManual(long invMovId, string usuario, string motivo)
+        {
+            if (invMovId <= 0) throw new ArgumentException("invMovId inválido.");
+            if (string.IsNullOrWhiteSpace(usuario)) throw new InvalidOperationException("Usuario requerido.");
+            motivo = (motivo ?? "").Trim();
+
+            using var cn = Db.GetOpenConnection();
+            using var tx = cn.BeginTransaction(IsolationLevel.Serializable);
+
+            try
+            {
+                // 1) Leer cabecera original
+                string tipoOrig;
+                string origen;
+                string estado;
+
+                using (var cmd = new SqlCommand(@"
+SELECT Tipo, Origen, Estado
+FROM dbo.InvMovimientoCab
+WHERE InvMovId = @id;", cn, tx))
+                {
+                    cmd.Parameters.Add("@id", SqlDbType.BigInt).Value = invMovId;
+                    using var rd = cmd.ExecuteReader();
+                    if (!rd.Read())
+                        throw new InvalidOperationException("Movimiento no existe.");
+
+                    tipoOrig = (rd.IsDBNull(0) ? "" : rd.GetString(0)).Trim().ToUpperInvariant();
+                    origen = (rd.IsDBNull(1) ? "" : rd.GetString(1)).Trim().ToUpperInvariant();
+                    estado = (rd.IsDBNull(2) ? "" : rd.GetString(2)).Trim().ToUpperInvariant();
+                }
+
+                if (origen != "MANUAL")
+                    throw new InvalidOperationException("Solo se puede reversar movimientos con Origen=MANUAL.");
+
+                if (estado != "APLICADO")
+                    throw new InvalidOperationException("Solo se puede reversar movimientos en estado APLICADO.");
+
+                if (tipoOrig != "ENTRADA" && tipoOrig != "SALIDA")
+                    throw new InvalidOperationException("Tipo de movimiento inválido para reverso.");
+
+                // 2) Leer líneas originales
+                var lineas = new List<(string prod, decimal cant, decimal cost)>();
+
+                using (var cmd = new SqlCommand(@"
+SELECT ProductoCodigo, Cantidad, ISNULL(CostoUnitario,0)
+FROM dbo.InvMovimientoLin
+WHERE InvMovId = @id
+ORDER BY Linea;", cn, tx))
+                {
+                    cmd.Parameters.Add("@id", SqlDbType.BigInt).Value = invMovId;
+                    using var rd = cmd.ExecuteReader();
+                    while (rd.Read())
+                    {
+                        var prod = (rd.IsDBNull(0) ? "" : rd.GetString(0)).Trim();
+                        var cant = rd.IsDBNull(1) ? 0m : rd.GetDecimal(1);
+                        var cost = rd.IsDBNull(2) ? 0m : rd.GetDecimal(2);
+
+                        if (!string.IsNullOrWhiteSpace(prod) && cant > 0)
+                            lineas.Add((prod, cant, cost));
+                    }
+                }
+
+                if (lineas.Count == 0)
+                    throw new InvalidOperationException("Movimiento sin líneas, no se puede reversar.");
+
+                // 3) Crear movimiento espejo
+                var tipoRev = (tipoOrig == "ENTRADA") ? "SALIDA" : "ENTRADA";
+
+                long invMovRevId;
+                using (var cmd = new SqlCommand(@"
+INSERT INTO dbo.InvMovimientoCab
+(Fecha, Tipo, Origen, OrigenId, AlmacenIdOrigen, AlmacenIdDestino, Usuario, Observacion, Estado, FechaCreacion, UsuarioCreacion)
+OUTPUT INSERTED.InvMovId
+SELECT
+    GETDATE(),
+    @Tipo,
+    'REVERSO',
+    @OrigenId,
+    AlmacenIdOrigen,
+    AlmacenIdDestino,
+    @Usr,
+    CONCAT('Reverso de Mov ', @OrigenId, '. Motivo: ', @Motivo),
+    'APLICADO',
+    GETDATE(),
+    @Usr
+FROM dbo.InvMovimientoCab
+WHERE InvMovId=@OrigenId;", cn, tx))
+                {
+                    cmd.Parameters.Add("@Tipo", SqlDbType.VarChar, 10).Value = tipoRev;
+                    cmd.Parameters.Add("@OrigenId", SqlDbType.BigInt).Value = invMovId;
+                    cmd.Parameters.Add("@Usr", SqlDbType.VarChar, 30).Value = usuario.Length > 30 ? usuario.Substring(0, 30) : usuario;
+                    cmd.Parameters.Add("@Motivo", SqlDbType.NVarChar, 200).Value = motivo;
+
+                    invMovRevId = Convert.ToInt64(cmd.ExecuteScalar() ?? 0L);
+                    if (invMovRevId <= 0) throw new InvalidOperationException("No se pudo crear el reverso.");
+                }
+
+                bool permitirNegativo = ConfigService.PermitirStockNegativo;
+
+                int lineaN = 1;
+                foreach (var it in lineas)
+                {
+                    using (var cmd = new SqlCommand(@"
+INSERT INTO dbo.InvMovimientoLin
+(InvMovId, Linea, ProductoCodigo, Cantidad, CostoUnitario, Usuario)
+VALUES
+(@mov, @lin, @prod, @cant, @cost, @usr);", cn, tx))
+                    {
+                        cmd.Parameters.Add("@mov", SqlDbType.BigInt).Value = invMovRevId;
+                        cmd.Parameters.Add("@lin", SqlDbType.Int).Value = lineaN;
+                        cmd.Parameters.Add("@prod", SqlDbType.VarChar, 20).Value = it.prod;
+
+                        var pCant = cmd.Parameters.Add("@cant", SqlDbType.Decimal);
+                        pCant.Precision = 18; pCant.Scale = 4; pCant.Value = it.cant;
+
+                        var pCost = cmd.Parameters.Add("@cost", SqlDbType.Decimal);
+                        pCost.Precision = 18; pCost.Scale = 6; pCost.Value = it.cost;
+
+                        cmd.Parameters.Add("@usr", SqlDbType.VarChar, 30).Value = usuario.Length > 30 ? usuario.Substring(0, 30) : usuario;
+
+                        cmd.ExecuteNonQuery();
+                    }
+
+                    // Ajuste stock contrario al original
+                    if (tipoOrig == "ENTRADA")
+                        _productoRepo.RestarStock(it.prod, it.cant, cn, tx, permitirNegativo);
+                    else
+                        _productoRepo.SumarStock(it.prod, it.cant, cn, tx);
+
+                    lineaN++;
+                }
+
+                // 4) Marcar original como REVERSADO
+                using (var cmd = new SqlCommand(@"
+UPDATE dbo.InvMovimientoCab
+SET Estado='REVERSADO',
+    Observacion = CASE 
+        WHEN Observacion IS NULL OR LTRIM(RTRIM(Observacion))='' THEN CONCAT('REVERSADO por ', @usr, '. Motivo: ', @mot)
+        ELSE Observacion + CHAR(10) + CONCAT('REVERSADO por ', @usr, '. Motivo: ', @mot)
+    END
+WHERE InvMovId=@id;", cn, tx))
+                {
+                    cmd.Parameters.Add("@id", SqlDbType.BigInt).Value = invMovId;
+                    cmd.Parameters.Add("@usr", SqlDbType.VarChar, 30).Value = usuario.Length > 30 ? usuario.Substring(0, 30) : usuario;
+                    cmd.Parameters.Add("@mot", SqlDbType.NVarChar, 200).Value = motivo;
+                    cmd.ExecuteNonQuery();
+                }
+
+                tx.Commit();
+
+                _audit.Log(
+                    modulo: "INVENTARIO",
+                    accion: "REVERSO_MANUAL",
+                    entidad: "InvMovimientoCab",
+                    entidadId: invMovId.ToString(),
+                    detalle: $"Reverso creado: {invMovRevId}. Motivo: {motivo}"
+                );
+
+                return invMovRevId;
+            }
+            catch
+            {
+                tx.Rollback();
+                throw;
+            }
+        }
+    }
+}
+using Andloe.Data;
+using Andloe.Entidad;
+using System;
+using System.Collections.Generic;
+
+namespace Andloe.Logica
+{
+    public sealed class NotaCreditoVentaService
+    {
+        private readonly NotaCreditoVentaRepository _repo = new();
+        private readonly UsuarioContextoRepository _ctxRepo = new();
+
+        public List<VentaOrigenDto> BuscarVentas(string? filtro, int top = 100)
+            => _repo.BuscarVentas(filtro, top);
+
+        public NotaCreditoVentaDto? CargarVenta(long ventaId, int usuarioId)
+        {
+            var dto = _repo.CargarVentaOrigen(ventaId);
+            if (dto == null) return null;
+
+            var ctx = _ctxRepo.ObtenerPorUsuarioId(usuarioId);
+
+            if (dto.Cab.EmpresaId <= 0) dto.Cab.EmpresaId = ctx.EmpresaId;
+            if (dto.Cab.SucursalId <= 0) dto.Cab.SucursalId = ctx.SucursalId;
+            if (dto.Cab.AlmacenId <= 0) dto.Cab.AlmacenId = ctx.AlmacenId;
+
+            return dto;
+        }
+
+        public List<NcfTipoDto> ListarTiposENcf()
+            => _repo.ListarTiposNcfNotaCredito();
+
+        public string ObtenerProximoNoDocumentoNcPreview()
+            => _repo.ObtenerProximoNoDocumentoNcPreview();
+
+        public NotaCreditoVentaDto EmitirDesdeVenta(NotaCreditoVentaDto dto, string usuario, int usuarioId, int? cajaId)
+        {
+            if (dto == null) throw new ArgumentNullException(nameof(dto));
+            if (usuarioId <= 0) throw new InvalidOperationException("UsuarioId requerido.");
+
+            var ctx = _ctxRepo.ObtenerPorUsuarioId(usuarioId);
+
+            if (dto.Cab.EmpresaId <= 0) dto.Cab.EmpresaId = ctx.EmpresaId;
+            if (dto.Cab.SucursalId <= 0) dto.Cab.SucursalId = ctx.SucursalId;
+            if (dto.Cab.AlmacenId <= 0) dto.Cab.AlmacenId = ctx.AlmacenId;
+
+            var ncId = _repo.CrearNotaCredito(dto, usuario);
+
+            var guardada = _repo.Obtener(ncId)
+                ?? throw new InvalidOperationException("No se pudo recargar la NC.");
+
+            guardada.Cab.EmpresaId = dto.Cab.EmpresaId;
+            guardada.Cab.SucursalId = dto.Cab.SucursalId;
+            guardada.Cab.AlmacenId = dto.Cab.AlmacenId;
+
+            return guardada;
+        }
+
+        public string GenerarENcf(long ncId, int tipoId, int usuarioId, int? cajaId)
+        {
+            if (usuarioId <= 0) throw new InvalidOperationException("UsuarioId requerido.");
+
+            var ctx = _ctxRepo.ObtenerPorUsuarioId(usuarioId);
+
+            return _repo.GenerarENcf(
+                ncId,
+                tipoId,
+                ctx.EmpresaId,
+                ctx.SucursalId,
+                cajaId,
+                string.Empty
+            );
+        }
+    }
+}﻿using System;
+using Andloe.Data;
+
+namespace Andloe.Logica
+{
+    /// <summary>
+    /// Servicio para generar códigos usando NumeradorRepository
+    /// pero tomando prefijo y longitud desde SistemaConfig.
+    /// </summary>
+    public static class NumeradorConfigService
+    {
+        private static readonly SistemaConfigRepository _cfgRepo = new();
+        private static readonly NumeradorRepository _numRepo = new();
+      
+
+        /// <summary>
+        /// Lee prefijo y longitud desde SistemaConfig.
+        /// Claves usadas:
+        ///   {baseClave}_PREFIJO
+        ///   {baseClave}_LONGITUD
+        /// </summary>
+        private static (string Prefijo, int Longitud) GetFormato(
+            string baseClave,
+            string prefijoDefault,
+            int longitudDefault)
+        {
+            // Prefijo
+            var prefijo = _cfgRepo.GetValor(baseClave + "_PREFIJO") ?? prefijoDefault;
+            if (string.IsNullOrWhiteSpace(prefijo))
+                prefijo = prefijoDefault;
+
+            // Longitud
+            var txtLen = _cfgRepo.GetValor(baseClave + "_LONGITUD");
+            int longitud;
+            if (!int.TryParse(txtLen, out longitud) || longitud <= 0 || longitud > 20)
+                longitud = longitudDefault;
+
+            return (prefijo, longitud);
+        }
+
+        // =======================
+        //   NUMERADORES PÚBLICOS
+        // =======================
+
+        /// <summary>Próximo número de FACTURA DE VENTA.</summary>
+        public static string NextFacturaVenta()
+        {
+            // En tu sistema la cabecera de venta usa tipo "VC"
+            var (pref, len) = GetFormato("NUM_FACTVENTA", "V", 8);
+            return _numRepo.Next("VC", pref, len);
+        }
+
+        /// <summary>Próximo código de PRODUCTO.</summary>
+        public static string NextProducto()
+        {
+            var (pref, len) = GetFormato("NUM_PRODUCTO", "P-", 6);
+            return _numRepo.Next("PROD", pref, len);
+        }
+
+        /// <summary>Próximo código de CLIENTE.</summary>
+        public static string NextCliente()
+        {
+            var (pref, len) = GetFormato("NUM_CLIENTE", "C-", 6);
+            return _numRepo.Next("CLI", pref, len);
+        }
+
+        /// <summary>Próximo código de PROVEEDOR.</summary>
+        public static string NextProveedor()
+        {
+            var (pref, len) = GetFormato("NUM_PROVEEDOR", "PR-", 6);
+            return _numRepo.Next("PROV", pref, len);
+        }
+
+        /// <summary>Próximo número de FACTURA DE COMPRA.</summary>
+        public static string NextFacturaCompra()
+        {
+            var (pref, len) = GetFormato("NUM_FACTCOMPRA", "FC-", 8);
+            return _numRepo.Next("CC", pref, len);
+        }
+    
+    // public static string NextPromoProductoDescuento()
+     //   {
+            // Debe coincidir con NumeradorSecuencia.Codigo
+           // return _numRepo.GetNext("PROMOPROD");
+        }
+
+    }
+//}
+ 
+ 
+
+﻿namespace Andloe.Logica;
+
+public static class Permisos
+{
+    // Nombres de permisos a usar en UI
+    public const string VerDashboard = "VerDashboard";
+    public const string VerUsuarios = "VerUsuarios";
+    public const string EditUsuarios = "EditUsuarios";
+    public const string VerPOS = "VerPOS";
+    public const string Configurar = "Configurar";
+}
+﻿using Andloe.Data;
+using Andloe.Entidad;
+using Microsoft.Data.SqlClient;
+using System;
+using System.Collections.Generic;
+using System.Data;
+using System.Linq;
+
+namespace Andloe.Logica
+{
+    public class PosService
+    {
+        private readonly NumeradorRepository _numRepo = new();
+        private readonly VentaRepository _ventaRepo = new();
+        private readonly VentaLineaRepository _lineRepo = new();
+        private readonly PosPagoRepository _pagoRepo = new();
+        private readonly ProductoRepository _prodRepo = new();
+        private readonly ClienteRepository _cliRepo = new();
+        private readonly InvMovimientoCabRepository _invCabRepo = new();
+        private readonly InvMovimientoLinRepository _invLinRepo = new();
+        private readonly AuditoriaService _audit = new();
+
+        // DESCUENTO / CONFIG
+        private readonly ConfigCalcService _configService;
+        private readonly ClienteRepository _clienteRepo;
+        private readonly ProductoRepository _productoRepo;
+
+        // PROMOS
+        private readonly PromoService _promoService = new();
+
+        // ✅ NUEVO: para registrar promos dentro del mismo TX del cierre
+        private readonly PromoRepository _promoRepo = new();
+
+        public PosService()
+        {
+            var repoConfig = new SistemaConfigRepository();
+            _configService = new ConfigCalcService(repoConfig);
+
+            _clienteRepo = _cliRepo;
+            _productoRepo = _prodRepo;
+        }
+
+        public PosService(
+            ConfigCalcService configService,
+            ClienteRepository clienteRepo,
+            ProductoRepository productoRepo)
+        {
+            _configService = configService;
+            _clienteRepo = clienteRepo;
+            _productoRepo = productoRepo;
+        }
+
+        // ================== DESCUENTOS ==================
+
+        public decimal CalcularMaxDescuentoPct(string clienteCodigo, string productoCodigo)
+        {
+            var maxGlobal = _configService.GetDecimal("DESCUENTO_MAX_GLOBAL", 0m);
+
+            var cliente = string.IsNullOrWhiteSpace(clienteCodigo)
+                ? null
+                : _clienteRepo.ObtenerPorCodigo(clienteCodigo);
+
+            var producto = _productoRepo.ObtenerPorCodigo(productoCodigo);
+
+            var descCliente = cliente?.DescuentoPctMax ?? 0m;
+            var descProducto = producto?.DescuentoPctMax ?? 0m;
+
+            var maxLocal = Math.Max(descCliente, descProducto);
+
+            return Math.Min(maxGlobal, maxLocal);
+        }
+
+        public void AplicarDescuento(ItemCarrito item, string clienteCodigo)
+        {
+            var maxPermitido = CalcularMaxDescuentoPct(clienteCodigo, item.ProductoCodigo);
+
+            item.DescuentoPct = maxPermitido;
+            item.DescuentoMonto = Math.Round(item.SubtotalBruto * (item.DescuentoPct / 100m), 2);
+        }
+
+        // ================== PROMOS ==================
+
+        public PromoAplicadaResult? CalcularPromoParaItem(
+            string? clienteCodigo,
+            ItemCarrito item,
+            int? categoriaId = null,
+            int? subcategoriaId = null)
+        {
+            if (item == null) return null;
+
+            return _promoService.CalcularMejorPromoLinea(
+                clienteCodigo: clienteCodigo,
+                productoCodigo: item.ProductoCodigo,
+                categoriaId: categoriaId,
+                subcategoriaId: subcategoriaId,
+                cantidad: item.Cantidad,
+                precioUnit: item.PrecioUnit
+            );
+        }
+
+        public void AplicarPromoEnItem(
+            string? clienteCodigo,
+            ItemCarrito item,
+            int? categoriaId = null,
+            int? subcategoriaId = null)
+        {
+            if (item == null) return;
+
+            var promo = _promoService.CalcularMejorPromoLinea(
+                clienteCodigo: clienteCodigo,
+                productoCodigo: item.ProductoCodigo,
+                categoriaId: categoriaId,
+                subcategoriaId: subcategoriaId,
+                cantidad: item.Cantidad,
+                precioUnit: item.PrecioUnit
+            );
+
+            if (promo == null)
+                return;
+
+            if (promo.DescuentoPct > 0)
+                item.DescuentoPct = promo.DescuentoPct;
+
+            if (promo.MontoDescuentoCalculado > 0)
+                item.DescuentoMonto = promo.MontoDescuentoCalculado;
+        }
+
+        // ================== CARRITO ==================
+
+        public List<ItemCarrito> Carrito { get; } = new();
+
+        public ItemCarrito? AgregarPorCodigo(string codigo, decimal cantidad = 1, string? clienteCodigo = null)
+        {
+            var itemInfo = _prodRepo.GetItemPOS(codigo);
+            if (itemInfo == null)
+                return null;
+
+            var (codigoProd, desc, precio, itbis) = itemInfo.Value;
+
+            if (!ConfigService.PermitirStockNegativo)
+            {
+                try
+                {
+                    var stockActual = _productoRepo.ObtenerStockActual(codigoProd);
+                    var enCarrito = Carrito
+                        .Where(x => x.ProductoCodigo == codigoProd)
+                        .Sum(x => x.Cantidad);
+
+                    var totalSolicitado = enCarrito + cantidad;
+
+                    if (stockActual < totalSolicitado)
+                        return null;
+                }
+                catch
+                {
+                    return null;
+                }
+            }
+
+            var prodFull = _productoRepo.ObtenerPorCodigo(codigoProd);
+            int? categoriaId = prodFull?.CategoriaId;
+            int? subcategoriaId = prodFull?.SubcategoriaId;
+
+            ItemCarrito item;
+
+            var existente = Carrito.FirstOrDefault(x => x.ProductoCodigo == codigoProd);
+            if (existente != null)
+            {
+                existente.Cantidad += cantidad;
+                item = existente;
+            }
+            else
+            {
+                var nuevo = new ItemCarrito
+                {
+                    ProductoCodigo = codigoProd,
+                    Descripcion = desc,
+                    Cantidad = cantidad,
+                    PrecioUnit = precio,
+                    ItbisPct = itbis
+                };
+
+                Carrito.Add(nuevo);
+                item = nuevo;
+            }
+
+            AplicarPromoEnItem(
+                clienteCodigo: clienteCodigo,
+                item: item,
+                categoriaId: categoriaId,
+                subcategoriaId: subcategoriaId
+            );
+
+            if (!string.IsNullOrWhiteSpace(clienteCodigo))
+            {
+                _promoService.AplicarPromosCarrito(Carrito, clienteCodigo);
+            }
+
+            return item;
+        }
+
+        public void Quitar(string productoCodigo)
+        {
+            Carrito.RemoveAll(x => x.ProductoCodigo == productoCodigo);
+        }
+
+        public (decimal Subtotal, decimal Itbis, decimal Total) Totales()
+        {
+            decimal s = 0, i = 0, t = 0;
+
+            foreach (var it in Carrito)
+            {
+                s += it.Importe;
+                i += it.ItbisMonto;
+                t += it.Total;
+            }
+
+            return (Math.Round(s, 2), Math.Round(i, 2), Math.Round(t, 2));
+        }
+
+        // ================== CERRAR VENTA ==================
+
+        public long CerrarVenta(
+    string usuario,
+    string? clienteCodigo,
+    int medioPagoId,
+    decimal montoRecibido,
+    string? moneda = null,
+    int terminoPagoId = 1,
+    string? posCajaNumero = null,
+    int cajaId = 0 
+)
+
+        {
+            if (Carrito.Count == 0)
+                throw new InvalidOperationException("Carrito vacío.");
+
+            if (string.IsNullOrWhiteSpace(clienteCodigo))
+                clienteCodigo = ConfigService.ClienteDefecto;
+
+            if (string.IsNullOrWhiteSpace(moneda))
+                moneda = ConfigService.MonedaDefecto;
+
+            var ahora = DateTime.Now;
+
+            // 1) Aplicar TODAS las promos al carrito (combos + individuales)
+            var promosAplicadas = _promoService.AplicarPromosCarrito(Carrito, clienteCodigo);
+
+            // 2) Totales ya con descuentos
+            var totales = Totales();
+            var descuentoTotal = Carrito.Sum(x => x.DescuentoMonto);
+
+            var venta = new Venta
+            {
+                NoDocumento = NumeradorConfigService.NextFacturaVenta(),
+                ClienteCodigo = clienteCodigo,
+                MonedaCodigo = moneda!,
+                TasaCambio = 1,
+                Subtotal = totales.Subtotal,
+                ImpuestoTotal = totales.Itbis,
+                Total = totales.Total,
+                DescuentoTotal = descuentoTotal,
+                Usuario = usuario,
+                Observacion = "POS",
+                Estado = "FACTURADA",
+                MedioPagoId = medioPagoId,
+                TerminoPagoId = terminoPagoId,
+                MontoPago = montoRecibido,
+                MontoCambio = Math.Max(0, montoRecibido - totales.Total),
+                Fecha = ahora,
+                FechaCreacion = ahora,
+                SubTotalMoneda = totales.Subtotal,
+                ItbisMoneda = totales.Itbis,
+                TotalMoneda = totales.Total,
+                POS_CajaNumero = posCajaNumero
+            };
+
+            using var cn = Db.GetOpenConnection();
+            using var tx = cn.BeginTransaction(IsolationLevel.ReadCommitted);
+
+            long ventaId;
+
+            try
+            {
+                // 3) Cabecera de venta
+                ventaId = _ventaRepo.InsertCabecera(venta, tx);
+
+                // 4) Movimiento de inventario
+                var almOrigenId = ConfigService.AlmacenPosOrigenId;
+                var almDestinoId = ConfigService.AlmacenPosDestinoId;
+
+                if (almOrigenId <= 0)
+                    throw new InvalidOperationException(
+                        "No está configurado el almacén de origen para POS. " +
+                        "Vaya a Configuración > General y seleccione un almacén.");
+
+                var movCab = new InvMovimientoCab
+                {
+                    Fecha = ahora,
+                    Tipo = "SALIDA",
+                    Origen = "VENTA",
+                    OrigenId = ventaId,
+                    AlmacenIdOrigen = almOrigenId,
+                    AlmacenIdDestino = almDestinoId > 0 ? almDestinoId : (int?)null,
+                    Usuario = usuario,
+                    Observacion = "Salida por venta POS",
+                    Estado = "APLICADO"
+                };
+
+                var invMovId = _invCabRepo.InsertCabecera(movCab, tx);
+
+                var permitirNegativo = ConfigService.PermitirStockNegativo;
+
+                // ✅ Indexar promos por item (una sola vez)
+                var promosPorItem = promosAplicadas
+                    .GroupBy(p => p.Item)
+                    .ToDictionary(g => g.Key, g => g.Select(x => x.Promo).ToList());
+
+                // ✅ Acumular por (PromoId, ProductoCodigo) una sola vez en todo el cierre
+                var acumuladoPromoProd = new Dictionary<(int PromoId, string ProductoCodigo), (int Linea, decimal MontoTotal)>();
+
+                // ✅ Periodo calculado una vez
+                var (periodoTipo, periodoClave) = PromoRepository.PeriodoDiario(ahora);
+
+                // 5) Líneas
+                int linea = 1;
+                foreach (var it in Carrito)
+                {
+                    int lineaActual = linea;
+
+                    var lin = new VentaLinea
+                    {
+                        VentaId = ventaId,
+                        Linea = lineaActual,
+                        ProductoCodigo = it.ProductoCodigo,
+                        Descripcion = it.Descripcion,
+                        Cantidad = it.Cantidad,
+                        PrecioUnit = it.PrecioUnit,
+                        ItbisPct = it.ItbisPct,
+                        ItbisMonto = it.ItbisMonto,
+                        Importe = it.Importe,
+                        TotalLinea = it.Total,
+                        DescuentoPct = it.DescuentoPct,
+                        DescuentoMonto = it.DescuentoMonto
+                    };
+
+                    _lineRepo.InsertLinea(lin, tx);
+
+                    _productoRepo.RestarStock(
+                        it.ProductoCodigo,
+                        it.Cantidad,
+                        cn,
+                        tx,
+                        permitirNegativo);
+
+                    var movLin = new InvMovimientoLin
+                    {
+                        InvMovId = invMovId,
+                        Linea = lineaActual,
+                        ProductoCodigo = it.ProductoCodigo,
+                        Cantidad = it.Cantidad,
+                        CostoUnitario = it.PrecioUnit
+                    };
+
+                    _invLinRepo.InsertLinea(movLin, tx);
+
+                    // ✅ Acumular promos por (PromoId, ProductoCodigo)
+                    if (promosPorItem.TryGetValue(it, out var promosItem))
+                    {
+                        foreach (var promo in promosItem)
+                        {
+                            if (promo == null || promo.MontoDescuentoCalculado <= 0)
+                                continue;
+
+                            var key = (promo.PromoId, it.ProductoCodigo);
+
+                            if (acumuladoPromoProd.TryGetValue(key, out var cur))
+                            {
+                                acumuladoPromoProd[key] = (cur.Linea, cur.MontoTotal + promo.MontoDescuentoCalculado);
+                            }
+                            else
+                            {
+                                acumuladoPromoProd[key] = (lineaActual, promo.MontoDescuentoCalculado);
+                            }
+                        }
+                    }
+
+                    linea++;
+                }
+
+
+                // ✅ Registrar PromoLog + PromoTope UNA sola vez por (PromoId, ProductoCodigo)
+                foreach (var kv in acumuladoPromoProd)
+                {
+                    var promoId = kv.Key.PromoId;
+                    var productoCodigo = kv.Key.ProductoCodigo;
+                    var lineaPromo = kv.Value.Linea;
+                    var montoTotal = Math.Round(kv.Value.MontoTotal, 2);
+
+                    if (montoTotal <= 0) continue;
+
+                    _promoRepo.RegistrarUsoPromoTx(
+                        promoId: promoId,
+                        origen: "VENTA",
+                        origenId: ventaId,
+                        linea: lineaPromo,
+                        montoDesc: montoTotal,
+                        monedaCodigo: moneda,
+                        tasaCambio: venta.TasaCambio,
+                        usuario: usuario,
+                        fechaAplic: ahora,
+                        periodoTipo: periodoTipo,
+                        periodoClave: periodoClave,
+                        clienteCodigo: clienteCodigo,
+                        productoCodigo: productoCodigo,
+                        cn: cn,
+                        tx: tx
+                    );
+                }
+
+                // ✅ A4: Asiento automático al facturar (dentro del TX)
+                _ = AsentarVentaPOS(
+                    cn: cn,
+                    tx: tx,
+                    ventaId: ventaId,
+                    fecha: ahora,
+                    usuario: usuario,
+                    monedaCodigo: venta.MonedaCodigo,
+                    tasaCambio: venta.TasaCambio,
+                    subtotalMoneda: venta.SubTotalMoneda,
+                    itbisMoneda: venta.ItbisMoneda,
+                    cajaId: cajaId,
+                    terminoPagoId: venta.TerminoPagoId
+                );
+
+
+                tx.Commit();
+            }
+            catch
+            {
+                tx?.Rollback();
+                throw;
+            }
+
+            // ✅ IMPORTANTE: ya NO se registra fuera del TX (evita duplicar)
+            return ventaId;
+        }
+
+        // ================== PAGOS POS ==================
+
+        public void GuardarPagosPOS(
+            long ventaId,
+            IEnumerable<PagoLineaResult> pagos,
+            string usuario,
+            int cajaId,
+            string? cajaNumero)
+        {
+            var lista = pagos?.ToList() ?? new();
+            if (lista.Count == 0) return;
+
+            using var cn = Db.GetOpenConnection();
+            using var tx = cn.BeginTransaction();
+
+            try
+            {
+                foreach (var p in lista)
+                {
+                    using var cmd = new SqlCommand(@"
+INSERT INTO dbo.POS_Pago
+(Fecha, MonedaCodigo, TasaCambio, Monto, MedioPagoId, Referencia, Entidad,
+ Observacion, Usuario, CajaId, POS_CajaNumero, VentaId, Estado)
+VALUES
+(@Fecha, @MonedaCodigo, @TasaCambio, @Monto, @MedioPagoId, @Referencia, @Entidad,
+ @Observacion, @Usuario, @CajaId, @POS_CajaNumero, @VentaId, @Estado);", cn, tx);
+
+                    cmd.Parameters.Add("@Fecha", SqlDbType.DateTime).Value = DateTime.Now;
+                    cmd.Parameters.Add("@MonedaCodigo", SqlDbType.VarChar, 3).Value = p.MonedaCodigo;
+
+                    var tc = cmd.Parameters.Add("@TasaCambio", SqlDbType.Decimal);
+                    tc.Precision = 18; tc.Scale = 6; tc.Value = p.TasaCambio;
+
+                    var monto = cmd.Parameters.Add("@Monto", SqlDbType.Decimal);
+                    monto.Precision = 18; monto.Scale = 2; monto.Value = p.MontoBase;
+
+                    cmd.Parameters.Add("@MedioPagoId", SqlDbType.Int).Value = p.MedioPagoId;
+                    cmd.Parameters.Add("@Referencia", SqlDbType.VarChar, 50).Value = "POS";
+                    cmd.Parameters.Add("@Entidad", SqlDbType.VarChar, 80).Value = "CAJA POS";
+                    cmd.Parameters.Add("@Observacion", SqlDbType.VarChar, 200).Value = "Pago POS";
+                    cmd.Parameters.Add("@Usuario", SqlDbType.VarChar, 30).Value = usuario;
+                    cmd.Parameters.Add("@CajaId", SqlDbType.Int).Value = cajaId;
+
+                    if (string.IsNullOrWhiteSpace(cajaNumero))
+                        cmd.Parameters.Add("@POS_CajaNumero", SqlDbType.NVarChar, 10).Value = DBNull.Value;
+                    else
+                        cmd.Parameters.Add("@POS_CajaNumero", SqlDbType.NVarChar, 10).Value = cajaNumero;
+
+                    cmd.Parameters.Add("@VentaId", SqlDbType.BigInt).Value = ventaId;
+                    cmd.Parameters.Add("@Estado", SqlDbType.VarChar, 20).Value = "APLICADO";
+
+                    cmd.ExecuteNonQuery();
+                }
+
+                tx.Commit();
+            }
+            catch
+            {
+                tx.Rollback();
+                throw;
+            }
+        }
+
+        private sealed class CajaContaCtas
+        {
+            public int? CtaCajaId { get; set; }
+            public int? CtaClienteId { get; set; }
+            public int? CtaIngresoId { get; set; }
+            public int? CtaItbisId { get; set; }
+        }
+
+        private CajaContaCtas LeerConfigCajaConta(SqlConnection cn, SqlTransaction tx, int cajaId, string monedaCodigo)
+        {
+            using var cmd = new SqlCommand(@"
+SELECT TOP(1)
+    COALESCE(CtaCajaId, CuentaCajaId)   AS CtaCajaId,
+    CtaClienteId,
+    CtaIngresoId,
+    CtaITBISId                          AS CtaItbisId
+FROM dbo.CajaContaConfig
+WHERE CajaId = @CajaId AND MonedaCodigo = @MonedaCodigo;", cn, tx);
+
+            cmd.Parameters.Add("@CajaId", SqlDbType.Int).Value = cajaId;
+            cmd.Parameters.Add("@MonedaCodigo", SqlDbType.VarChar, 3).Value = monedaCodigo;
+
+            using var rd = cmd.ExecuteReader();
+            if (!rd.Read())
+                throw new InvalidOperationException(
+                    $"No hay configuración contable en CajaContaConfig para CajaId={cajaId} y Moneda={monedaCodigo}.");
+
+            return new CajaContaCtas
+            {
+                CtaCajaId = rd["CtaCajaId"] == DBNull.Value ? null : Convert.ToInt32(rd["CtaCajaId"]),
+                CtaClienteId = rd["CtaClienteId"] == DBNull.Value ? null : Convert.ToInt32(rd["CtaClienteId"]),
+                CtaIngresoId = rd["CtaIngresoId"] == DBNull.Value ? null : Convert.ToInt32(rd["CtaIngresoId"]),
+                CtaItbisId = rd["CtaItbisId"] == DBNull.Value ? null : Convert.ToInt32(rd["CtaItbisId"]),
+            };
+        }
+
+        private long CrearAsientoVentaPos(
+            SqlConnection cn,
+            SqlTransaction tx,
+            DateTime fecha,
+            long ventaId,
+            string usuario,
+            string monedaCodigo,
+            decimal tasaCambio,
+            decimal subtotalMoneda,
+            decimal itbisMoneda,
+            int cajaId,
+            int terminoPagoId
+        )
+        {
+            if (cajaId <= 0)
+                throw new InvalidOperationException("CajaId inválido. No se puede contabilizar la venta POS sin CajaId.");
+
+            var ctas = LeerConfigCajaConta(cn, tx, cajaId, monedaCodigo);
+
+            // Regla mínima (sin asumir cosas raras):
+            // - Contado (terminoPagoId == 1): Debe Caja
+            // - Crédito: Debe Cliente (CxC)
+            bool esContado = (terminoPagoId == 1);
+
+            int? cuentaDebe = esContado ? ctas.CtaCajaId : ctas.CtaClienteId;
+            if (cuentaDebe is null || cuentaDebe <= 0)
+                throw new InvalidOperationException(esContado
+                    ? "Falta CtaCajaId/CuentaCajaId en CajaContaConfig."
+                    : "Falta CtaClienteId en CajaContaConfig.");
+
+            if (ctas.CtaIngresoId is null || ctas.CtaIngresoId <= 0)
+                throw new InvalidOperationException("Falta CtaIngresoId en CajaContaConfig.");
+
+            // ITBIS puede ser 0, pero si hay ITBIS y no hay cuenta, fallo:
+            if (itbisMoneda != 0 && (ctas.CtaItbisId is null || ctas.CtaItbisId <= 0))
+                throw new InvalidOperationException("La venta tiene ITBIS pero falta CtaITBISId en CajaContaConfig.");
+
+            long movId;
+            string noAsiento;
+
+            // 1) Crear cabecera
+            using (var cmd = new SqlCommand("dbo.sp_Conta_Mov_Crear", cn, tx))
+            {
+                cmd.CommandType = CommandType.StoredProcedure;
+                cmd.Parameters.Add("@Fecha", SqlDbType.DateTime2).Value = fecha;
+                cmd.Parameters.Add("@Descripcion", SqlDbType.VarChar, 200).Value = $"Venta POS {ventaId}";
+                cmd.Parameters.Add("@Origen", SqlDbType.VarChar, 20).Value = "VENTA";
+                cmd.Parameters.Add("@OrigenId", SqlDbType.BigInt).Value = ventaId;
+                cmd.Parameters.Add("@Usuario", SqlDbType.NVarChar, 120).Value = usuario;
+                cmd.Parameters.Add("@MonedaCodigo", SqlDbType.VarChar, 3).Value = monedaCodigo;
+
+                var pTc = cmd.Parameters.Add("@TasaCambio", SqlDbType.Decimal);
+                pTc.Precision = 18; pTc.Scale = 6; pTc.Value = tasaCambio <= 0 ? 1 : tasaCambio;
+
+                var pMov = cmd.Parameters.Add("@MovimientoId", SqlDbType.BigInt);
+                pMov.Direction = ParameterDirection.Output;
+
+                var pNo = cmd.Parameters.Add("@NoAsiento", SqlDbType.VarChar, 30);
+                pNo.Direction = ParameterDirection.Output;
+
+                cmd.ExecuteNonQuery();
+
+                movId = Convert.ToInt64(pMov.Value);
+                noAsiento = Convert.ToString(pNo.Value) ?? "";
+            }
+
+            decimal totalMoneda = Math.Round(subtotalMoneda + itbisMoneda, 2);
+
+            // 2) Líneas (por CuentaId)
+            void AddLinea(int cuentaId, string desc, decimal debMon, decimal credMon)
+            {
+                using var cmd = new SqlCommand("dbo.sp_Conta_Mov_AddLinea", cn, tx);
+                cmd.CommandType = CommandType.StoredProcedure;
+                cmd.Parameters.Add("@MovimientoId", SqlDbType.BigInt).Value = movId;
+                cmd.Parameters.Add("@CuentaId", SqlDbType.Int).Value = cuentaId;
+                cmd.Parameters.Add("@Descripcion", SqlDbType.VarChar, 100).Value = desc;
+
+                var pDeb = cmd.Parameters.Add("@DebitoMoneda", SqlDbType.Decimal);
+                pDeb.Precision = 18; pDeb.Scale = 2; pDeb.Value = debMon;
+
+                var pCred = cmd.Parameters.Add("@CreditoMoneda", SqlDbType.Decimal);
+                pCred.Precision = 18; pCred.Scale = 2; pCred.Value = credMon;
+
+                cmd.ExecuteNonQuery();
+            }
+
+            AddLinea(cuentaDebe.Value, esContado ? "Caja venta POS" : "CxC venta POS", totalMoneda, 0m);
+            AddLinea(ctas.CtaIngresoId.Value, "Ingresos por venta", 0m, Math.Round(subtotalMoneda, 2));
+
+            if (itbisMoneda != 0)
+                AddLinea(ctas.CtaItbisId!.Value, "ITBIS por pagar", 0m, Math.Round(itbisMoneda, 2));
+
+            // 3) Cerrar
+            using (var cmd = new SqlCommand("dbo.sp_Conta_Mov_Cerrar", cn, tx))
+            {
+                cmd.CommandType = CommandType.StoredProcedure;
+                cmd.Parameters.Add("@MovimientoId", SqlDbType.BigInt).Value = movId;
+                cmd.ExecuteNonQuery();
+            }
+
+            // 4) Dejarlo CONTABILIZADO (para poder reversar luego si lo necesitas)
+            using (var cmd = new SqlCommand(@"
+UPDATE dbo.ContabilidadMovimientoCab
+SET Estado = 'CONTABILIZADO'
+WHERE MovimientoId = @MovimientoId;", cn, tx))
+            {
+                cmd.Parameters.Add("@MovimientoId", SqlDbType.BigInt).Value = movId;
+                cmd.ExecuteNonQuery();
+            }
+
+            // 5) Amarrar la venta con asiento + caja
+            using (var cmd = new SqlCommand(@"
+UPDATE dbo.VentaCab
+SET MovimientoIdConta = @MovimientoIdConta,
+    CajaId = @CajaId
+WHERE VentaId = @VentaId;", cn, tx))
+            {
+                cmd.Parameters.Add("@MovimientoIdConta", SqlDbType.BigInt).Value = movId;
+                cmd.Parameters.Add("@CajaId", SqlDbType.Int).Value = cajaId;
+                cmd.Parameters.Add("@VentaId", SqlDbType.BigInt).Value = ventaId;
+                cmd.ExecuteNonQuery();
+            }
+
+            return movId;
+        }
+
+        private sealed class CuentasCajaConta
+        {
+            public int CuentaCajaId { get; set; }
+            public int? CtaClienteId { get; set; }
+            public int? CtaIngresoId { get; set; }
+            public int? CtaITBISId { get; set; }
+        }
+
+        private CuentasCajaConta LeerCajaContaConfig(SqlConnection cn, SqlTransaction tx, int cajaId, string monedaCodigo)
+        {
+            using var cmd = new SqlCommand(@"
+SELECT TOP(1)
+    CuentaCajaId,
+    CtaClienteId,
+    CtaIngresoId,
+    CtaITBISId
+FROM dbo.CajaContaConfig
+WHERE CajaId = @CajaId AND MonedaCodigo = @Moneda;", cn, tx);
+
+            cmd.Parameters.Add("@CajaId", SqlDbType.Int).Value = cajaId;
+            cmd.Parameters.Add("@Moneda", SqlDbType.VarChar, 3).Value = monedaCodigo;
+
+            using var rd = cmd.ExecuteReader();
+            if (!rd.Read())
+                throw new InvalidOperationException(
+                    $"No existe CajaContaConfig para CajaId={cajaId} y Moneda={monedaCodigo}.");
+
+            return new CuentasCajaConta
+            {
+                CuentaCajaId = Convert.ToInt32(rd["CuentaCajaId"]),
+                CtaClienteId = rd["CtaClienteId"] == DBNull.Value ? null : Convert.ToInt32(rd["CtaClienteId"]),
+                CtaIngresoId = rd["CtaIngresoId"] == DBNull.Value ? null : Convert.ToInt32(rd["CtaIngresoId"]),
+                CtaITBISId = rd["CtaITBISId"] == DBNull.Value ? null : Convert.ToInt32(rd["CtaITBISId"]),
+            };
+        }
+
+        private string GetCodigoCuenta(SqlConnection cn, SqlTransaction tx, int cuentaId)
+        {
+            using var cmd = new SqlCommand(@"
+SELECT Codigo
+FROM dbo.ContabilidadCatalogoCuenta
+WHERE CuentaId = @CuentaId;", cn, tx);
+
+            cmd.Parameters.Add("@CuentaId", SqlDbType.Int).Value = cuentaId;
+
+            var obj = cmd.ExecuteScalar();
+            var codigo = obj == null || obj == DBNull.Value ? null : Convert.ToString(obj);
+
+            if (string.IsNullOrWhiteSpace(codigo))
+                throw new InvalidOperationException($"No se encontró Codigo en ContabilidadCatalogoCuenta para CuentaId={cuentaId}.");
+
+            codigo = codigo.Trim();
+
+            // sp_Conta_AsientoVenta usa varchar(15) para las cuentas (verificado en script).
+            if (codigo.Length > 15)
+                throw new InvalidOperationException($"El código de cuenta '{codigo}' excede 15 caracteres; ajusta el código o el SP.");
+
+            return codigo;
+        }
+
+        private long AsentarVentaPOS(
+            SqlConnection cn,
+            SqlTransaction tx,
+            long ventaId,
+            DateTime fecha,
+            string usuario,
+            string monedaCodigo,
+            decimal tasaCambio,
+            decimal subtotalMoneda,
+            decimal itbisMoneda,
+            int cajaId,
+            int terminoPagoId
+        )
+        {
+            // Regla mínima (sin inventar otra): si terminoPagoId == 1 => contado.
+            // Si luego tú manejas crédito real, aquí cambiamos la regla con tu tabla TerminoPago.
+            bool esContado = (terminoPagoId == 1);
+
+            var cfg = LeerCajaContaConfig(cn, tx, cajaId, monedaCodigo);
+
+            if (cfg.CtaIngresoId is null)
+                throw new InvalidOperationException("CajaContaConfig: falta CtaIngresoId.");
+            if (itbisMoneda != 0 && cfg.CtaITBISId is null)
+                throw new InvalidOperationException("CajaContaConfig: falta CtaITBISId y la venta tiene ITBIS.");
+            if (!esContado && cfg.CtaClienteId is null)
+                throw new InvalidOperationException("CajaContaConfig: falta CtaClienteId para ventas a crédito.");
+
+            var cuentaDebeId = esContado ? cfg.CuentaCajaId : cfg.CtaClienteId!.Value;
+
+            var cuentaDebeCodigo = GetCodigoCuenta(cn, tx, cuentaDebeId);
+            var cuentaIngresoCodigo = GetCodigoCuenta(cn, tx, cfg.CtaIngresoId.Value);
+            var cuentaItbisCodigo = (itbisMoneda != 0) ? GetCodigoCuenta(cn, tx, cfg.CtaITBISId!.Value) : "1.1.01"; // no se usa si itbisMoneda==0
+
+            long movId;
+            string noAsiento;
+
+            using (var cmd = new SqlCommand("dbo.sp_Conta_AsientoVenta", cn, tx))
+            {
+                cmd.CommandType = CommandType.StoredProcedure;
+
+                cmd.Parameters.Add("@Fecha", SqlDbType.DateTime2).Value = fecha;
+                cmd.Parameters.Add("@Origen", SqlDbType.VarChar, 20).Value = "VENTA";
+                cmd.Parameters.Add("@OrigenId", SqlDbType.BigInt).Value = ventaId;
+                cmd.Parameters.Add("@Usuario", SqlDbType.NVarChar, 120).Value = usuario;
+                cmd.Parameters.Add("@MonedaCodigo", SqlDbType.VarChar, 3).Value = monedaCodigo;
+
+                var pTc = cmd.Parameters.Add("@TasaCambio", SqlDbType.Decimal);
+                pTc.Precision = 18; pTc.Scale = 6; pTc.Value = (tasaCambio <= 0 ? 1m : tasaCambio);
+
+                var pSub = cmd.Parameters.Add("@SubtotalMoneda", SqlDbType.Decimal);
+                pSub.Precision = 18; pSub.Scale = 2; pSub.Value = subtotalMoneda;
+
+                var pItb = cmd.Parameters.Add("@ItbisMoneda", SqlDbType.Decimal);
+                pItb.Precision = 18; pItb.Scale = 2; pItb.Value = itbisMoneda;
+
+                // NOTA: el SP llama este parámetro @CuentaCxC, pero lo usamos como "cuenta debe"
+                // (caja si contado, cliente si crédito).
+                cmd.Parameters.Add("@CuentaCxC", SqlDbType.VarChar, 15).Value = cuentaDebeCodigo;
+                cmd.Parameters.Add("@CuentaIngreso", SqlDbType.VarChar, 15).Value = cuentaIngresoCodigo;
+                cmd.Parameters.Add("@CuentaITBIS", SqlDbType.VarChar, 15).Value = cuentaItbisCodigo;
+
+                var pMov = cmd.Parameters.Add("@MovimientoId", SqlDbType.BigInt);
+                pMov.Direction = ParameterDirection.Output;
+
+                var pNo = cmd.Parameters.Add("@NoAsiento", SqlDbType.VarChar, 30);
+                pNo.Direction = ParameterDirection.Output;
+
+                cmd.ExecuteNonQuery();
+
+                movId = Convert.ToInt64(pMov.Value);
+                noAsiento = Convert.ToString(pNo.Value) ?? "";
+            }
+
+            // Amarrar asiento + caja en VentaCab (verificado que existen estas columnas y FK).
+            using (var cmd = new SqlCommand(@"
+UPDATE dbo.VentaCab
+SET MovimientoIdConta = @MovId,
+    CajaId = @CajaId
+WHERE VentaId = @VentaId;", cn, tx))
+            {
+                cmd.Parameters.Add("@MovId", SqlDbType.BigInt).Value = movId;
+                cmd.Parameters.Add("@CajaId", SqlDbType.Int).Value = cajaId;
+                cmd.Parameters.Add("@VentaId", SqlDbType.BigInt).Value = ventaId;
+                cmd.ExecuteNonQuery();
+            }
+
+            return movId;
+        }
+
+
+
+        // ================== CLIENTE ==================
+
+        public ClienteDto? BuscarClientePorRncOCodigo(string valor)
+        {
+            if (string.IsNullOrWhiteSpace(valor))
+                return null;
+
+            return _cliRepo.BuscarPorCodigoORnc(valor.Trim());
+        }
+
+        public void RecalcularPromosCarrito(string? clienteCodigo = null)
+        {
+            _promoService.AplicarPromosCarrito(Carrito, clienteCodigo);
+        }
+    }
+}
+﻿namespace Andloe.Logica
+{
+    // Resultado estándar que el POS usará después de evaluar promociones.
+    public class PromoAplicadaResult
+    {
+        public int PromoId { get; set; }
+        public string CodigoPromo { get; set; } = string.Empty;
+        public string NombrePromo { get; set; } = string.Empty;
+        public string TipoPromo { get; set; } = string.Empty;
+        public int Prioridad { get; set; }
+
+        public int? ReglaId { get; set; }
+        public string TipoRegla { get; set; } = string.Empty;
+
+        public decimal DescuentoPct { get; set; }
+        public decimal DescuentoMonto { get; set; }
+        public decimal PrecioFijo { get; set; }
+
+        // ---- CAMPOS EXTRA PARA PACK / CONDICIONES ----
+        public decimal? MinCantidad { get; set; }          // r.MinCantidad
+        public string? PackBuyProducto { get; set; }       // r.Pack_BuyProducto
+        public decimal PackBuyCant { get; set; }           // r.Pack_BuyCant
+        public decimal PackPrecio { get; set; }            // r.Pack_Precio
+
+        // Resultado final
+        public decimal MontoDescuentoCalculado { get; set; }
+        public decimal PrecioUnitFinal { get; set; } = 0m;
+    }
+}
+﻿using System;
+using System.Collections.Generic;
+using System.Data;
+using System.Linq;
+using Microsoft.Data.SqlClient;
+using Andloe.Data;
+using Andloe.Entidad;
+
+namespace Andloe.Logica
+{
+    public class PromoService
+    {
+        private readonly PromoRepository _repo = new();
+
+        /// <summary>
+        /// Calcula la mejor promo aplicable a UNA línea individual.
+        /// NO maneja combos de varios productos; eso se hace en
+        /// AplicarPromosCarrito.
+        /// 
+        /// Soporta:
+        ///   - DESCUENTO_PCT
+        ///   - DESCUENTO_MONTO
+        ///   - PRECIO_FIJO
+        ///   - PACK (mismo producto, Cant.pack &gt; 1)
+        ///   - PACK_PRODUCTO (mismo producto, Cant.pack &gt; 1)
+        /// </summary>
+        public PromoAplicadaResult? CalcularMejorPromoLinea(
+            string? clienteCodigo,
+            string productoCodigo,
+            int? categoriaId,
+            int? subcategoriaId,
+            decimal cantidad,
+            decimal precioUnit)
+        {
+            if (string.IsNullOrWhiteSpace(productoCodigo))
+                return null;
+
+            var hoy = DateTime.Now.Date;
+
+            using var cn = Db.GetOpenConnection();
+            using var cmd = new SqlCommand(@"
+SELECT TOP(1)
+       c.PromoId,           -- 0
+       c.Codigo,            -- 1
+       c.Nombre,            -- 2
+       c.TipoPromo,         -- 3
+       c.Prioridad,         -- 4
+       r.ReglaId,           -- 5
+       r.TipoRegla,         -- 6
+       r.DescuentoPct,      -- 7
+       r.DescuentoMonto,    -- 8
+       r.PrecioFijo,        -- 9
+       r.MinCantidad,       --10
+       r.Pack_BuyProducto,  --11
+       r.Pack_BuyCant,      --12
+       r.Pack_Precio        --13
+FROM dbo.PromoCab        c
+JOIN dbo.PromoRegla      r   ON r.PromoId = c.PromoId
+JOIN dbo.PromoAlcance    a   ON a.PromoId = c.PromoId
+JOIN dbo.PromoCalendario cal ON cal.PromoId = c.PromoId
+WHERE c.Estado       = 'ACTIVA'
+  AND c.TipoPromo    = 'DESCUENTO'
+  AND a.TipoObjetivo = 'PRODUCTO'
+  AND a.NoProducto   = @ProductoCodigo
+  AND @Hoy >= CONVERT(date, cal.FechaInicio)
+  AND @Hoy <= CONVERT(date, cal.FechaFin)
+  AND r.TipoRegla IN ('DESCUENTO_PCT',
+                      'DESCUENTO_MONTO',
+                      'PRECIO_FIJO',
+                      'PACK',
+                      'PACK_PRODUCTO')
+ORDER BY c.Prioridad DESC, c.PromoId DESC;", cn);
+
+            cmd.Parameters.Add("@ProductoCodigo", SqlDbType.VarChar, 20).Value = productoCodigo;
+            cmd.Parameters.Add("@Hoy", SqlDbType.Date).Value = hoy;
+
+            using var rd = cmd.ExecuteReader();
+            if (!rd.Read())
+                return null;
+
+            var promo = new PromoAplicadaResult
+            {
+                PromoId = rd.GetInt32(0),
+                CodigoPromo = rd.GetString(1),
+                NombrePromo = rd.GetString(2),
+                TipoPromo = rd.GetString(3),
+                Prioridad = rd.GetInt32(4),
+                ReglaId = rd.IsDBNull(5) ? (int?)null : rd.GetInt32(5),
+                TipoRegla = rd.GetString(6),
+                DescuentoPct = rd.IsDBNull(7) ? 0m : rd.GetDecimal(7),
+                DescuentoMonto = rd.IsDBNull(8) ? 0m : rd.GetDecimal(8),
+                PrecioFijo = rd.IsDBNull(9) ? 0m : rd.GetDecimal(9),
+                MinCantidad = rd.IsDBNull(10) ? (decimal?)null : rd.GetDecimal(10),
+                PackBuyProducto = rd.IsDBNull(11) ? null : rd.GetString(11),
+                PackBuyCant = rd.IsDBNull(12) ? 0m : rd.GetDecimal(12),
+                PackPrecio = rd.IsDBNull(13) ? 0m : rd.GetDecimal(13),
+            };
+
+            var subtotalBruto = cantidad * precioUnit;
+            decimal montoDesc = 0m;
+
+            switch (promo.TipoRegla)
+            {
+                case "DESCUENTO_PCT":
+                    if (promo.DescuentoPct > 0)
+                        montoDesc = Math.Round(subtotalBruto * (promo.DescuentoPct / 100m), 2);
+                    break;
+
+                case "DESCUENTO_MONTO":
+                    if (promo.DescuentoMonto > 0)
+                    {
+                        montoDesc = promo.DescuentoMonto;
+                        if (montoDesc > subtotalBruto)
+                            montoDesc = subtotalBruto;
+                        montoDesc = Math.Round(montoDesc, 2);
+                    }
+                    break;
+
+                case "PRECIO_FIJO":
+                    if (promo.PrecioFijo > 0)
+                    {
+                        var totalPromo = promo.PrecioFijo * cantidad;
+                        montoDesc = subtotalBruto - totalPromo;
+                        if (montoDesc < 0) montoDesc = 0;
+                        if (montoDesc > subtotalBruto) montoDesc = subtotalBruto;
+                        montoDesc = Math.Round(montoDesc, 2);
+                    }
+                    break;
+
+                case "PACK":
+                case "PACK_PRODUCTO":
+                    {
+                        // IMPORTANTE:
+                        // Aquí SOLO manejamos packs de un MISMO producto
+                        // donde Cant.pack > 1. Cuando Cant.pack = 1,
+                        // lo consideramos combo multi-producto y se maneja
+                        // en AplicarPromosCarrito().
+                        if (promo.PackBuyCant <= 1)
+                            break;
+
+                        const decimal ITBIS_POR_DEFECTO = 18m;
+
+                        // Si viene Pack_BuyProducto, debe ser el mismo producto
+                        if (!string.IsNullOrEmpty(promo.PackBuyProducto) &&
+                            !string.Equals(promo.PackBuyProducto, productoCodigo, StringComparison.OrdinalIgnoreCase))
+                        {
+                            break;
+                        }
+
+                        var packCant = promo.PackBuyCant;
+                        var packPrecioTotal = promo.PackPrecio > 0
+                            ? promo.PackPrecio
+                            : promo.PrecioFijo;
+
+                        if (packCant <= 0 || packPrecioTotal <= 0)
+                            break;
+
+                        if (cantidad < packCant)
+                            break;
+
+                        var packs = (int)Math.Floor(cantidad / packCant);
+                        if (packs <= 0)
+                            break;
+
+                        var cantidadPack = packs * packCant;
+
+                        var subtotalNormalPacks = cantidadPack * precioUnit;
+                        var totalNormalPacks = subtotalNormalPacks * (1 + ITBIS_POR_DEFECTO / 100m);
+
+                        var totalPromoPacks = packs * packPrecioTotal;
+
+                        var descTotalConItbis = totalNormalPacks - totalPromoPacks;
+                        if (descTotalConItbis <= 0)
+                            break;
+
+                        var descBase = descTotalConItbis / (1 + ITBIS_POR_DEFECTO / 100m);
+                        if (descBase > subtotalBruto)
+                            descBase = subtotalBruto;
+
+                        montoDesc = Math.Round(descBase, 2);
+                        break;
+                    }
+            }
+
+            promo.MontoDescuentoCalculado = montoDesc;
+            promo.PrecioUnitFinal = precioUnit;
+
+            return promo;
+        }
+
+        /// <summary>
+        /// Aplica TODAS las promos al carrito completo:
+        /// 1) Combos PACK_PRODUCTO de varios productos (Cant.pack = 1).
+        /// 2) Promos individuales por línea.
+        /// Devuelve la lista de promos aplicadas para poder registrarlas.
+        /// </summary>
+        public List<(ItemCarrito Item, PromoAplicadaResult Promo)> AplicarPromosCarrito(
+            List<ItemCarrito> carrito,
+            string? clienteCodigo)
+        {
+            var resultado = new List<(ItemCarrito, PromoAplicadaResult)>();
+
+            if (carrito == null || carrito.Count == 0)
+                return resultado;
+
+            // Limpiamos descuentos previos
+            foreach (var it in carrito)
+            {
+                it.DescuentoMonto = 0m;
+                it.DescuentoPct = 0m;
+            }
+
+            // 1) Combos multi-producto con PACK_PRODUCTO y Cant.pack = 1
+            var combos = CalcularCombosPackProducto(carrito);
+            foreach (var par in combos)
+            {
+                var it = par.Item;
+                var promo = par.Promo;
+
+                // Sumamos el descuento combo a la línea
+                it.DescuentoMonto += par.Promo.MontoDescuentoCalculado;
+
+                if (it.SubtotalBruto > 0)
+                    it.DescuentoPct = Math.Round((it.DescuentoMonto * 100m) / it.SubtotalBruto, 2);
+
+                resultado.Add((it, promo));
+            }
+
+            // 2) Promos por línea (evitando volver a tratar combos)
+            foreach (var it in carrito)
+            {
+                var promo = CalcularMejorPromoLinea(
+                    clienteCodigo,
+                    it.ProductoCodigo,
+                    null,
+                    null,
+                    it.Cantidad,
+                    it.PrecioUnit);
+
+                if (promo == null || promo.MontoDescuentoCalculado <= 0)
+                    continue;
+
+                // Si es PACK_PRODUCTO con Cant.pack = 1 ya lo tratamos como combo.
+                if (promo.TipoRegla == "PACK_PRODUCTO" && promo.PackBuyCant <= 1)
+                    continue;
+
+                it.DescuentoMonto += promo.MontoDescuentoCalculado;
+
+                if (promo.DescuentoPct > 0)
+                {
+                    it.DescuentoPct = promo.DescuentoPct;
+                }
+                else if (it.SubtotalBruto > 0)
+                {
+                    it.DescuentoPct = Math.Round((it.DescuentoMonto * 100m) / it.SubtotalBruto, 2);
+                }
+
+                resultado.Add((it, promo));
+            }
+
+            return resultado;
+        }
+
+        /// <summary>
+        /// Calcula combos PACK_PRODUCTO donde:
+        ///   - TipoRegla = PACK_PRODUCTO
+        ///   - PackBuyCant = 1
+        ///   - Misma PromoId para varios productos distintos
+        ///   - El precio pack (Pack_Precio) es el precio final del combo (con ITBIS).
+        /// </summary>
+        private List<(ItemCarrito Item, PromoAplicadaResult Promo)> CalcularCombosPackProducto(
+            List<ItemCarrito> carrito)
+        {
+            var resultado = new List<(ItemCarrito, PromoAplicadaResult)>();
+            if (carrito == null || carrito.Count == 0)
+                return resultado;
+
+            // 1) Buscar la promo PACK_PRODUCTO / Cant=1 de cada línea
+            var promosPorItem = new Dictionary<ItemCarrito, PromoAplicadaResult>();
+
+            foreach (var it in carrito)
+            {
+                var promo = CalcularMejorPromoLinea(
+                    clienteCodigo: null,
+                    productoCodigo: it.ProductoCodigo,
+                    categoriaId: null,
+                    subcategoriaId: null,
+                    cantidad: it.Cantidad,
+                    precioUnit: it.PrecioUnit);
+
+                if (promo == null)
+                    continue;
+
+                if (!string.Equals(promo.TipoRegla, "PACK_PRODUCTO", StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                if (promo.PackBuyCant != 1)
+                    continue;
+
+                if (promo.PackPrecio <= 0)
+                    continue;
+
+                promosPorItem[it] = promo;
+            }
+
+            if (promosPorItem.Count == 0)
+                return resultado;
+
+            const decimal ITBIS_POR_DEFECTO = 18m;
+
+            // 2) Agrupar por PromoId (cada grupo = combo)
+            foreach (var grupo in promosPorItem.GroupBy(x => x.Value.PromoId))
+            {
+                var itemsGrupo = grupo.Select(g => g.Key).ToList();
+                var promoBase = grupo.First().Value;
+
+                // Para que sea combo, al menos 2 productos distintos
+                if (itemsGrupo.Count < 2)
+                    continue;
+
+                // Nº de combos: mínimo de cantidades disponibles de cada producto
+                var combos = (int)itemsGrupo
+                    .Select(it => (int)Math.Floor(it.Cantidad / promoBase.PackBuyCant))
+                    .Min();
+
+                if (combos <= 0)
+                    continue;
+
+                // Total normal (con ITBIS) para la parte combinable
+                decimal totalNormalConItbis = 0m;
+                decimal totalBaseCombos = 0m;
+                var basePorItem = new Dictionary<ItemCarrito, decimal>();
+
+                foreach (var it in itemsGrupo)
+                {
+                    var cantCombo = combos * promoBase.PackBuyCant; // aquí = combos * 1
+                    var baseItem = cantCombo * it.PrecioUnit;       // sin ITBIS
+
+                    basePorItem[it] = baseItem;
+                    totalBaseCombos += baseItem;
+
+                    totalNormalConItbis += baseItem * (1 + ITBIS_POR_DEFECTO / 100m);
+                }
+
+                if (totalBaseCombos <= 0)
+                    continue;
+
+                // Precio final del combo
+                var totalPromoConItbis = combos * promoBase.PackPrecio;
+
+                var descTotalConItbis = totalNormalConItbis - totalPromoConItbis;
+                if (descTotalConItbis <= 0)
+                    continue;
+
+                var descBase = descTotalConItbis / (1 + ITBIS_POR_DEFECTO / 100m);
+
+                // 3) Repartir el descuento entre las líneas del combo
+                decimal acumulado = 0m;
+                int index = 0;
+
+                foreach (var it in itemsGrupo)
+                {
+                    index++;
+                    decimal descItem;
+
+                    if (index < itemsGrupo.Count)
+                    {
+                        var propor = basePorItem[it] / totalBaseCombos;
+                        descItem = Math.Round(descBase * propor, 2);
+                        acumulado += descItem;
+                    }
+                    else
+                    {
+                        // Último: ajustar para cuadrar con el total
+                        descItem = Math.Round(descBase - acumulado, 2);
+                    }
+
+                    var promoItem = new PromoAplicadaResult
+                    {
+                        PromoId = promoBase.PromoId,
+                        CodigoPromo = promoBase.CodigoPromo,
+                        NombrePromo = promoBase.NombrePromo,
+                        TipoPromo = promoBase.TipoPromo,
+                        Prioridad = promoBase.Prioridad,
+                        ReglaId = promoBase.ReglaId,
+                        TipoRegla = promoBase.TipoRegla,
+                        DescuentoPct = 0m,
+                        DescuentoMonto = 0m,
+                        PrecioFijo = promoBase.PrecioFijo,
+                        MinCantidad = promoBase.MinCantidad,
+                        PackBuyProducto = promoBase.PackBuyProducto,
+                        PackBuyCant = promoBase.PackBuyCant,
+                        PackPrecio = promoBase.PackPrecio,
+                        MontoDescuentoCalculado = descItem,
+                        PrecioUnitFinal = it.PrecioUnit
+                    };
+
+                    resultado.Add((it, promoItem));
+                }
+            }
+
+            return resultado;
+        }
+
+        /// <summary>
+        /// Registra el uso de una promo (cuando implementes PromoLog/PromoTope).
+        /// </summary>
+        public void RegistrarUsoPromoLinea(
+            PromoAplicadaResult promo,
+            long ventaId,
+            string productoCodigo,
+            decimal cantidad,
+            string usuario)
+        {
+            if (promo == null || promo.MontoDescuentoCalculado <= 0)
+                return;
+
+            _repo.RegistrarUsoPromo(
+                promo.PromoId,
+                ventaId,
+                productoCodigo,
+                cantidad,
+                promo.MontoDescuentoCalculado,
+                usuario);
+        }
+    }
+}
+﻿using System;
+using System.Collections.Concurrent;
+using System.Collections.Generic;
+using System.Data;
+using System.Linq;
+using System.Reflection;
+
+namespace Andloe.Logica.Reportes
+{
+    public static class RdlcReportDataBuilder
+    {
+        private static readonly ConcurrentDictionary<Type, PropertyInfo[]> PropertyCache = new ConcurrentDictionary<Type, PropertyInfo[]>();
+
+        public static DataTable BuildTable<T>(string tableName, T data)
+        {
+            if (string.IsNullOrWhiteSpace(tableName))
+                throw new ArgumentException("El nombre de la tabla no puede ser nulo o vacío.", nameof(tableName));
+
+            if (data == null)
+                throw new ArgumentNullException(nameof(data));
+
+            var dt = new DataTable(tableName);
+            dt.Locale = System.Globalization.CultureInfo.InvariantCulture;
+
+            var props = GetCachedProperties<T>();
+
+            foreach (var p in props)
+            {
+                var t = Nullable.GetUnderlyingType(p.PropertyType) ?? p.PropertyType;
+                
+                // Validar que el tipo sea compatible con DataTable
+                if (!IsValidDataTableType(t))
+                {
+                    // Usar string como fallback para tipos complejos
+                    dt.Columns.Add(p.Name, typeof(string));
+                }
+                else
+                {
+                    dt.Columns.Add(p.Name, t);
+                }
+            }
+
+            var row = dt.NewRow();
+            foreach (var p in props)
+            {
+                try
+                {
+                    var val = p.GetValue(data, null);
+                    
+                    if (val == null)
+                    {
+                        row[p.Name] = DBNull.Value;
+                    }
+                    else if (!IsValidDataTableType(val.GetType()))
+                    {
+                        // Convertir tipos complejos a string
+                        row[p.Name] = val.ToString();
+                    }
+                    else
+                    {
+                        row[p.Name] = val;
+                    }
+                }
+                catch (TargetInvocationException)
+                {
+                    // Si falla la obtención del valor, asignar DBNull
+                    row[p.Name] = DBNull.Value;
+                }
+            }
+            dt.Rows.Add(row);
+
+            return dt;
+        }
+
+        public static DataTable BuildTableList<T>(string tableName, IEnumerable<T> list)
+        {
+            if (string.IsNullOrWhiteSpace(tableName))
+                throw new ArgumentException("El nombre de la tabla no puede ser nulo o vacío.", nameof(tableName));
+
+            if (list == null)
+                throw new ArgumentNullException(nameof(list));
+
+            var dt = new DataTable(tableName);
+            dt.Locale = System.Globalization.CultureInfo.InvariantCulture;
+
+            var props = GetCachedProperties<T>();
+
+            foreach (var p in props)
+            {
+                var t = Nullable.GetUnderlyingType(p.PropertyType) ?? p.PropertyType;
+                
+                if (!IsValidDataTableType(t))
+                {
+                    dt.Columns.Add(p.Name, typeof(string));
+                }
+                else
+                {
+                    dt.Columns.Add(p.Name, t);
+                }
+            }
+
+            foreach (var item in list)
+            {
+                if (item == null) continue; // Saltar elementos nulos en la lista
+
+                var row = dt.NewRow();
+                foreach (var p in props)
+                {
+                    try
+                    {
+                        var val = p.GetValue(item, null);
+                        
+                        if (val == null)
+                        {
+                            row[p.Name] = DBNull.Value;
+                        }
+                        else if (!IsValidDataTableType(val.GetType()))
+                        {
+                            row[p.Name] = val.ToString();
+                        }
+                        else
+                        {
+                            row[p.Name] = val;
+                        }
+                    }
+                    catch (TargetInvocationException)
+                    {
+                        row[p.Name] = DBNull.Value;
+                    }
+                }
+                dt.Rows.Add(row);
+            }
+
+            return dt;
+        }
+
+        private static PropertyInfo[] GetCachedProperties<T>()
+        {
+            return PropertyCache.GetOrAdd(typeof(T), type =>
+                type.GetProperties(BindingFlags.Public | BindingFlags.Instance)
+                    .Where(p => p.CanRead && p.GetIndexParameters().Length == 0) // Excluir propiedades indexadas
+                    .ToArray()
+            );
+        }
+
+        private static bool IsValidDataTableType(Type type)
+        {
+            // DataTable soporta tipos primitivos, string, DateTime, Decimal, Guid, TimeSpan, y byte[]
+            return type.IsPrimitive
+                || type == typeof(string)
+                || type == typeof(DateTime)
+                || type == typeof(decimal)
+                || type == typeof(Guid)
+                || type == typeof(TimeSpan)
+                || type == typeof(byte[])
+                || type == typeof(DateTimeOffset)
+                || type.IsEnum;
+        }
+
+        /// <summary>
+        /// Limpia la caché de propiedades. Útil para pruebas o escenarios de carga dinámica de tipos.
+        /// </summary>
+        public static void ClearCache()
+        {
+            PropertyCache.Clear();
+        }
+    }
+}
+﻿#nullable enable
+using System;
+using Andloe.Data;
+using Andloe.Entidad;
+using Microsoft.Extensions.Logging;
+using SesionSvc = Andloe.Logica.SesionService;
+
+namespace Andloe.Logica
+{
+    public sealed class ReporteService
+    {
+        private readonly ReporteRepository _repo;
+        private readonly ILogger<ReporteService> _logger;
+
+        public ReporteService(ReporteRepository repo, ILogger<ReporteService> logger)
+        {
+            _repo = repo ?? throw new ArgumentNullException(nameof(repo));
+            _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        }
+
+        // ✅ recomendado: modulo + actividad + codigo
+        public ReporteDefDto ObtenerReporteParaImprimir(string modulo, string actividad, string codigo)
+        {
+            var s = SesionSvc.Current;
+
+            var rep = _repo.ResolverReporte(
+                modulo: modulo,
+                actividad: actividad,
+                codigo: codigo,
+                empresaId: s.EmpresaId,
+                sucursalId: s.SucursalId,
+                usuarioId: s.UsuarioId
+            );
+
+            if (rep == null)
+                throw new InvalidOperationException($"No hay reporte activo configurado para {modulo}/{actividad}/{codigo}");
+
+            if (string.IsNullOrWhiteSpace(rep.Motor))
+                throw new InvalidOperationException("El reporte no tiene Motor definido.");
+
+            if (string.IsNullOrWhiteSpace(rep.RutaArchivo))
+                throw new InvalidOperationException("El reporte no tiene RutaArchivo definido.");
+
+            _logger.LogInformation("Reporte obtenido: {Identificador}, Motor: {Motor}", codigo, rep.Motor);
+
+            return rep;
+        }
+
+        // ✅ atajo: modulo + codigo (si no quieres actividad)
+        public ReporteDefDto ObtenerReporteParaImprimir(string modulo, string codigo)
+        {
+            var s = SesionSvc.Current;
+
+            var rep = _repo.ResolverReportePorCodigo(
+                modulo: modulo,
+                codigo: codigo,
+                empresaId: s.EmpresaId,
+                sucursalId: s.SucursalId,
+                usuarioId: s.UsuarioId
+            );
+
+            if (rep == null)
+                throw new InvalidOperationException($"No hay reporte activo configurado para {modulo}/{codigo}");
+
+            if (string.IsNullOrWhiteSpace(rep.Motor))
+                throw new InvalidOperationException("El reporte no tiene Motor definido.");
+
+            if (string.IsNullOrWhiteSpace(rep.RutaArchivo))
+                throw new InvalidOperationException("El reporte no tiene RutaArchivo definido.");
+
+            _logger.LogInformation("Reporte obtenido: {Identificador}, Motor: {Motor}", codigo, rep.Motor);
+
+            return rep;
+        }
+    }
+}
+#nullable restore
+﻿#nullable enable
+using System;
+using System.Data;
+using Microsoft.Data.SqlClient;
+using Andloe.Data;
+
+namespace Andloe.Logica
+{
+    public sealed class SesionActual
+    {
+        public int UsuarioId { get; init; }
+        public string Usuario { get; init; } = "";
+        public int EmpresaId { get; init; }
+        public int SucursalId { get; init; }
+        public int AlmacenId { get; init; }
+
+        public int? CajaId { get; private set; }
+
+        public bool EstaCompletaBase()
+            => UsuarioId > 0 && EmpresaId > 0 && SucursalId > 0 && AlmacenId > 0;
+
+        public void SetCaja(int cajaId) => CajaId = (cajaId > 0) ? cajaId : null;
+        public void ClearCaja() => CajaId = null;
+    }
+
+    public static class SesionService
+    {
+        private static SesionActual? _current;
+
+        /// <summary>
+        /// Úsalo cuando quieras exigir sesión completa (lanza si no está lista).
+        /// </summary>
+        public static SesionActual Current
+        {
+            get
+            {
+                var s = _current;
+                if (s is null || !s.EstaCompletaBase())
+                    throw new InvalidOperationException("Sesión no inicializada: debe iniciar sesión y tener Empresa/Sucursal/Almacén.");
+                return s;
+            }
+        }
+
+        /// <summary>
+        /// Devuelve null si no hay sesión (NO lanza).
+        /// FormPrincipal lo usa.
+        /// </summary>
+        public static SesionActual? TryGet() => _current;
+
+        public static void Cerrar() => _current = null;
+
+        /// <summary>
+        /// Inicia sesión base:
+        /// - Usuario + Empresa seleccionada
+        /// - Resuelve Sucursal/Almacén así:
+        ///   (1) UsuarioContexto (SP dbo.UsuarioContexto_Get) si coincide Empresa
+        ///   (2) Defaults del sistema (SistemaConfig SUCURSAL_DEFECTO_ID / ALMACEN_DEFECTO_ID) si son válidos
+        ///   (3) Fallback: primera Sucursal/Almacén activos de la empresa
+        /// </summary>
+        public static void Iniciar(int usuarioId, string usuario, int empresaId)
+        {
+            if (usuarioId <= 0) throw new ArgumentException("UsuarioId inválido.", nameof(usuarioId));
+            if (empresaId <= 0) throw new ArgumentException("EmpresaId inválido.", nameof(empresaId));
+
+            usuario = (usuario ?? "").Trim();
+            if (usuario.Length == 0) usuario = $"USR{usuarioId}";
+
+            var (sucDefault, almDefault) = TryGetDefaultsFromConfig();
+
+            // ✅ OJO: aquí VA usuarioId también (ya no da error)
+            var (sucursalId, almacenId) = ResolverSucursalAlmacenParaEmpresa(usuarioId, empresaId, sucDefault, almDefault);
+
+            _current = new SesionActual
+            {
+                UsuarioId = usuarioId,
+                Usuario = usuario,
+                EmpresaId = empresaId,
+                SucursalId = sucursalId,
+                AlmacenId = almacenId
+            };
+        }
+
+        public static void SetCaja(int cajaId)
+        {
+            if (_current is null) throw new InvalidOperationException("No hay sesión iniciada.");
+            _current.SetCaja(cajaId);
+        }
+
+        public static void ClearCaja()
+        {
+            if (_current is null) return;
+            _current.ClearCaja();
+        }
+
+        // =========================
+        // Helpers internos
+        // =========================
+
+        private static (int sucursalId, int almacenId) TryGetDefaultsFromConfig()
+        {
+            try
+            {
+                var cfg = new SistemaConfigRepository();
+                var sucTxt = cfg.GetValor("SUCURSAL_DEFECTO_ID");
+                var almTxt = cfg.GetValor("ALMACEN_DEFECTO_ID");
+
+                int.TryParse(sucTxt, out var sucId);
+                int.TryParse(almTxt, out var almId);
+
+                return (sucId, almId);
+            }
+            catch
+            {
+                return (0, 0);
+            }
+        }
+
+        private static (int sucursalId, int almacenId) ResolverSucursalAlmacenParaEmpresa(
+            int usuarioId,
+            int empresaId,
+            int sucDefault,
+            int almDefault)
+        {
+            // 1) UsuarioContexto (SP) si coincide Empresa
+            var ctx = TryGetUsuarioContexto(usuarioId);
+            if (ctx != null &&
+                ctx.EmpresaId == empresaId &&
+                ctx.SucursalId > 0 &&
+                ctx.AlmacenId > 0)
+            {
+                return (ctx.SucursalId, ctx.AlmacenId);
+            }
+
+            using var cn = Db.GetOpenConnection();
+
+            // 2) Defaults del sistema (si son válidos para esa empresa)
+            if (sucDefault > 0 && almDefault > 0)
+            {
+                using var cmdVal = new SqlCommand(@"
+IF EXISTS (
+    SELECT 1
+    FROM dbo.Sucursal s
+    JOIN dbo.Almacen a ON a.SucursalId = s.SucursalId AND a.EmpresaId = s.EmpresaId
+    WHERE s.EmpresaId = @emp
+      AND s.SucursalId = @suc AND s.Estado = 1
+      AND a.AlmacenId  = @alm AND a.Estado = 1
+)
+    SELECT 1
+ELSE
+    SELECT 0;", cn);
+
+                cmdVal.Parameters.Add("@emp", SqlDbType.Int).Value = empresaId;
+                cmdVal.Parameters.Add("@suc", SqlDbType.Int).Value = sucDefault;
+                cmdVal.Parameters.Add("@alm", SqlDbType.Int).Value = almDefault;
+
+                var ok = Convert.ToInt32(cmdVal.ExecuteScalar() ?? 0) == 1;
+                if (ok)
+                    return (sucDefault, almDefault);
+            }
+
+            // 3) Fallback: primera sucursal + primer almacén activos
+            using var cmd = new SqlCommand(@"
+;WITH S AS (
+    SELECT TOP(1) SucursalId
+    FROM dbo.Sucursal
+    WHERE EmpresaId = @emp AND Estado = 1
+    ORDER BY Codigo, Nombre, SucursalId
+),
+A AS (
+    SELECT TOP(1) a.AlmacenId, a.SucursalId
+    FROM dbo.Almacen a
+    JOIN S ON S.SucursalId = a.SucursalId
+    WHERE a.EmpresaId = @emp AND a.Estado = 1
+    ORDER BY a.Codigo, a.Nombre, a.AlmacenId
+)
+SELECT
+    (SELECT TOP(1) SucursalId FROM S)  AS SucursalId,
+    (SELECT TOP(1) AlmacenId  FROM A)  AS AlmacenId;", cn);
+
+            cmd.Parameters.Add("@emp", SqlDbType.Int).Value = empresaId;
+
+            using var rd = cmd.ExecuteReader();
+            if (!rd.Read())
+                throw new InvalidOperationException("No se pudo resolver Sucursal/Almacén para la empresa seleccionada.");
+
+            var sucursalId = rd.IsDBNull(0) ? 0 : rd.GetInt32(0);
+            var almacenId = rd.IsDBNull(1) ? 0 : rd.GetInt32(1);
+
+            if (sucursalId <= 0)
+                throw new InvalidOperationException("La empresa seleccionada no tiene sucursales activas (Estado=1).");
+
+            if (almacenId <= 0)
+                throw new InvalidOperationException("La sucursal seleccionada no tiene almacenes activos (Estado=1).");
+
+            return (sucursalId, almacenId);
+        }
+
+        private sealed class UsuarioContextoDto
+        {
+            public int UsuarioId { get; set; }
+            public int EmpresaId { get; set; }
+            public int SucursalId { get; set; }
+            public int AlmacenId { get; set; }
+        }
+
+        private static UsuarioContextoDto? TryGetUsuarioContexto(int usuarioId)
+        {
+            try
+            {
+                using var cn = Db.GetOpenConnection();
+                using var cmd = new SqlCommand("dbo.UsuarioContexto_Get", cn)
+                {
+                    CommandType = CommandType.StoredProcedure
+                };
+                cmd.Parameters.Add("@UsuarioId", SqlDbType.Int).Value = usuarioId;
+
+                using var rd = cmd.ExecuteReader();
+                if (!rd.Read()) return null;
+
+                // Tu SP:
+                // 0 uc.UsuarioId
+                // 1 uc.EmpresaId
+                // 2 e.RazonSocial
+                // 3 uc.SucursalId
+                // 4 s.Codigo
+                // 5 s.Nombre
+                // 6 uc.AlmacenId
+                // 7 a.Codigo
+                // 8 a.Nombre
+                return new UsuarioContextoDto
+                {
+                    UsuarioId = rd.GetInt32(0),
+                    EmpresaId = rd.GetInt32(1),
+                    SucursalId = rd.GetInt32(3),
+                    AlmacenId = rd.GetInt32(6),
+                };
+            }
+            catch
+            {
+                return null;
+            }
+        }
+    }
+}
+#nullable restore
+﻿using System;
+using System.Collections.Generic;
+using Andloe.Data;
+using Andloe.Entidad;
+
+namespace Andloe.Logica
+{
+    public class TerminoPagoService
+    {
+        private readonly TerminoPagoRepository _repo = new();
+
+        public List<TerminoPago> ListarTodos() => _repo.ListarTodos();
+        public List<TerminoPago> ListarActivos() => _repo.ListarActivos();
+        public TerminoPago? ObtenerPorId(int id) => _repo.ObtenerPorId(id);
+
+        public int Crear(TerminoPago t)
+        {
+            Validar(t, esNuevo: true);
+            return _repo.Insertar(t);
+        }
+
+        public void Actualizar(TerminoPago t)
+        {
+            if (t.TerminoPagoId <= 0)
+                throw new ArgumentException("ID inválido para actualizar.", nameof(t.TerminoPagoId));
+
+            Validar(t, esNuevo: false);
+            _repo.Actualizar(t);
+        }
+
+        public void CambiarEstado(int id, bool activo) => _repo.CambiarEstado(id, activo);
+
+        private void Validar(TerminoPago t, bool esNuevo)
+        {
+            if (string.IsNullOrWhiteSpace(t.Codigo))
+                throw new InvalidOperationException("El código del término de pago es obligatorio.");
+
+            if (string.IsNullOrWhiteSpace(t.Descripcion))
+                throw new InvalidOperationException("La descripción es obligatoria.");
+
+            if (t.DiasPlazo < 0)
+                throw new InvalidOperationException("Los días de plazo no pueden ser negativos.");
+
+            // ✅ Regla plan:
+            // - Si DiasPlazo > 0 => 1 cuota (vence a DiasPlazo)
+            // - Si DiasPlazo == 0 => debe tener CantCuotas > 0 (si quieres cuotas)
+            if (t.DiasPlazo > 0)
+            {
+                t.CantCuotas = null;
+                t.FrecuenciaDias = null;
+            }
+            else
+            {
+                if (!t.CantCuotas.HasValue || t.CantCuotas.Value <= 0)
+                    throw new InvalidOperationException("Si DiasPlazo es 0, debes indicar CantCuotas (> 0) para plan de pago.");
+
+                if (!t.FrecuenciaDias.HasValue || t.FrecuenciaDias.Value <= 0)
+                    t.FrecuenciaDias = 30;
+            }
+
+            if (t.TieneDescuento)
+            {
+                if (!t.PorcDescuento.HasValue || t.PorcDescuento.Value <= 0)
+                    throw new InvalidOperationException("Debe indicar un porcentaje de descuento mayor a 0.");
+                if (!t.DiasDescuento.HasValue || t.DiasDescuento.Value <= 0)
+                    throw new InvalidOperationException("Debe indicar los días de descuento mayores a 0.");
+            }
+            else
+            {
+                t.PorcDescuento = null;
+                t.DiasDescuento = null;
+            }
+
+            int? excluirId = esNuevo ? null : t.TerminoPagoId;
+            if (_repo.ExisteCodigo(t.Codigo, excluirId))
+                throw new InvalidOperationException("Ya existe un término de pago con ese código.");
+        }
+    }
+}
+﻿using System;
+using System.Collections.Generic;
+using System.Security.Cryptography;
+using System.Text;
+using Andloe.Data;
+using Andloe.Entidad;
+
+namespace Andloe.Logica
+{
+    public class UsuarioService
+    {
+        private readonly UsuarioRepository _repo = new();
+
+        /// <summary>Lista usuarios con filtro opcional (usuario/email) y TOP configurable.</summary>
+        public List<Usuario> Listar(string? filtro = null, int top = 200)
+            => _repo.Listar(filtro, top);
+
+        /// <summary>Obtiene un usuario por Id.</summary>
+        public Usuario? Obtener(int id)
+            => _repo.ObtenerPorId(id);
+
+        /// <summary>Crea un usuario con contraseña (hash + salt).</summary>
+        public int Crear(string usuario, string? email, string estado, string passwordPlano)
+        {
+            usuario = (usuario ?? "").Trim();
+            email = string.IsNullOrWhiteSpace(email) ? null : email!.Trim();
+            estado = string.IsNullOrWhiteSpace(estado) ? "Activo" : estado.Trim();
+
+            if (usuario.Length == 0) throw new InvalidOperationException("Usuario requerido.");
+            if (_repo.ExisteUsuario(usuario)) throw new InvalidOperationException("El usuario ya existe.");
+            if (!string.IsNullOrEmpty(email) && _repo.ExisteEmail(email)) throw new InvalidOperationException("El email ya existe.");
+            if (string.IsNullOrEmpty(passwordPlano)) throw new InvalidOperationException("Contraseña requerida.");
+
+            var (hash, salt) = HashWithSalt(passwordPlano);
+
+            var u = new Usuario
+            {
+                UsuarioNombre = usuario,
+                Email = email ?? "",
+                Estado = estado,
+                HashPassword = hash,
+                Salt = salt,
+                IntentosFallidos = 0,
+                BloqueadoHasta = null
+            };
+
+            return _repo.Crear(u);
+        }
+
+        /// <summary>Actualiza datos básicos (sin cambiar contraseña).</summary>
+        public void Actualizar(int id, string usuario, string? email, string estado)
+        {
+            usuario = (usuario ?? "").Trim();
+            email = string.IsNullOrWhiteSpace(email) ? null : email!.Trim();
+            estado = string.IsNullOrWhiteSpace(estado) ? "Activo" : estado.Trim();
+
+            if (usuario.Length == 0) throw new InvalidOperationException("Usuario requerido.");
+            if (_repo.ExisteUsuario(usuario, id)) throw new InvalidOperationException("El usuario ya existe.");
+            if (!string.IsNullOrEmpty(email) && _repo.ExisteEmail(email, id)) throw new InvalidOperationException("El email ya existe.");
+
+            var u = _repo.ObtenerPorId(id) ?? throw new InvalidOperationException("Usuario no encontrado.");
+            u.UsuarioNombre = usuario;
+            u.Email = email ?? "";
+            u.Estado = estado;
+
+            _repo.Actualizar(u);
+        }
+
+        /// <summary>Cambia la contraseña del usuario (hash + salt).</summary>
+        public void CambiarPassword(int id, string nuevaClave)
+        {
+            if (string.IsNullOrEmpty(nuevaClave)) throw new InvalidOperationException("Contraseña requerida.");
+            var (hash, salt) = HashWithSalt(nuevaClave);
+            _repo.CambiarPassword(id, hash, salt);
+        }
+
+        /// <summary>Elimina el usuario (y sus roles relacionados).</summary>
+        public void Eliminar(int id)
+            => _repo.Eliminar(id);
+
+        /// <summary>
+        /// Genera hash SHA-256 compatible con SQL: HASHBYTES('SHA2_256', Salt + CAST(@pass AS VARBINARY(NV)))
+        /// NVARCHAR usa UTF-16 LE → Encoding.Unicode.
+        /// </summary>
+        private static (byte[] hash, byte[] salt) HashWithSalt(string password)
+        {
+            var salt = RandomNumberGenerator.GetBytes(32);
+            var passBytes = Encoding.Unicode.GetBytes(password);
+            var toHash = new byte[salt.Length + passBytes.Length];
+            Buffer.BlockCopy(salt, 0, toHash, 0, salt.Length);
+            Buffer.BlockCopy(passBytes, 0, toHash, salt.Length, passBytes.Length);
+            using var sha = SHA256.Create();
+            var hash = sha.ComputeHash(toHash);
+            return (hash, salt);
+        }
+         
+        // === ROLES ===
+        public List<Rol> ListarRolesSistema()
+            => _repo.ListarTodosLosRoles();
+
+        public List<Rol> ObtenerRolesDeUsuario(int usuarioId)
+            => _repo.ObtenerRoles(usuarioId);
+
+        public void GuardarRolesDeUsuario(int usuarioId, IEnumerable<int> rolIds)
+            => _repo.ReemplazarRolesUsuario(usuarioId, rolIds);
+    }
+}

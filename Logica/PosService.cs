@@ -221,13 +221,16 @@ namespace Andloe.Logica
         // ================== CERRAR VENTA ==================
 
         public long CerrarVenta(
-            string usuario,
-            string? clienteCodigo,
-            int medioPagoId,
-            decimal montoRecibido,
-            string? moneda = null,
-            int terminoPagoId = 1,
-            string? posCajaNumero = null)
+    string usuario,
+    string? clienteCodigo,
+    int medioPagoId,
+    decimal montoRecibido,
+    string? moneda = null,
+    int terminoPagoId = 1,
+    string? posCajaNumero = null,
+    int cajaId = 0 
+)
+
         {
             if (Carrito.Count == 0)
                 throw new InvalidOperationException("Carrito vacío.");
@@ -261,6 +264,7 @@ namespace Andloe.Logica
                 Observacion = "POS",
                 Estado = "FACTURADA",
                 MedioPagoId = medioPagoId,
+                TerminoPagoId = terminoPagoId,
                 MontoPago = montoRecibido,
                 MontoCambio = Math.Max(0, montoRecibido - totales.Total),
                 Fecha = ahora,
@@ -384,6 +388,7 @@ namespace Andloe.Logica
                     linea++;
                 }
 
+
                 // ✅ Registrar PromoLog + PromoTope UNA sola vez por (PromoId, ProductoCodigo)
                 foreach (var kv in acumuladoPromoProd)
                 {
@@ -412,6 +417,22 @@ namespace Andloe.Logica
                         tx: tx
                     );
                 }
+
+                // ✅ A4: Asiento automático al facturar (dentro del TX)
+                _ = AsentarVentaPOS(
+                    cn: cn,
+                    tx: tx,
+                    ventaId: ventaId,
+                    fecha: ahora,
+                    usuario: usuario,
+                    monedaCodigo: venta.MonedaCodigo,
+                    tasaCambio: venta.TasaCambio,
+                    subtotalMoneda: venta.SubTotalMoneda,
+                    itbisMoneda: venta.ItbisMoneda,
+                    cajaId: cajaId,
+                    terminoPagoId: venta.TerminoPagoId
+                );
+
 
                 tx.Commit();
             }
@@ -487,6 +508,319 @@ VALUES
                 throw;
             }
         }
+
+        private sealed class CajaContaCtas
+        {
+            public int? CtaCajaId { get; set; }
+            public int? CtaClienteId { get; set; }
+            public int? CtaIngresoId { get; set; }
+            public int? CtaItbisId { get; set; }
+        }
+
+        private CajaContaCtas LeerConfigCajaConta(SqlConnection cn, SqlTransaction tx, int cajaId, string monedaCodigo)
+        {
+            using var cmd = new SqlCommand(@"
+SELECT TOP(1)
+    COALESCE(CtaCajaId, CuentaCajaId)   AS CtaCajaId,
+    CtaClienteId,
+    CtaIngresoId,
+    CtaITBISId                          AS CtaItbisId
+FROM dbo.CajaContaConfig
+WHERE CajaId = @CajaId AND MonedaCodigo = @MonedaCodigo;", cn, tx);
+
+            cmd.Parameters.Add("@CajaId", SqlDbType.Int).Value = cajaId;
+            cmd.Parameters.Add("@MonedaCodigo", SqlDbType.VarChar, 3).Value = monedaCodigo;
+
+            using var rd = cmd.ExecuteReader();
+            if (!rd.Read())
+                throw new InvalidOperationException(
+                    $"No hay configuración contable en CajaContaConfig para CajaId={cajaId} y Moneda={monedaCodigo}.");
+
+            return new CajaContaCtas
+            {
+                CtaCajaId = rd["CtaCajaId"] == DBNull.Value ? null : Convert.ToInt32(rd["CtaCajaId"]),
+                CtaClienteId = rd["CtaClienteId"] == DBNull.Value ? null : Convert.ToInt32(rd["CtaClienteId"]),
+                CtaIngresoId = rd["CtaIngresoId"] == DBNull.Value ? null : Convert.ToInt32(rd["CtaIngresoId"]),
+                CtaItbisId = rd["CtaItbisId"] == DBNull.Value ? null : Convert.ToInt32(rd["CtaItbisId"]),
+            };
+        }
+
+        private long CrearAsientoVentaPos(
+            SqlConnection cn,
+            SqlTransaction tx,
+            DateTime fecha,
+            long ventaId,
+            string usuario,
+            string monedaCodigo,
+            decimal tasaCambio,
+            decimal subtotalMoneda,
+            decimal itbisMoneda,
+            int cajaId,
+            int terminoPagoId
+        )
+        {
+            if (cajaId <= 0)
+                throw new InvalidOperationException("CajaId inválido. No se puede contabilizar la venta POS sin CajaId.");
+
+            var ctas = LeerConfigCajaConta(cn, tx, cajaId, monedaCodigo);
+
+            // Regla mínima (sin asumir cosas raras):
+            // - Contado (terminoPagoId == 1): Debe Caja
+            // - Crédito: Debe Cliente (CxC)
+            bool esContado = (terminoPagoId == 1);
+
+            int? cuentaDebe = esContado ? ctas.CtaCajaId : ctas.CtaClienteId;
+            if (cuentaDebe is null || cuentaDebe <= 0)
+                throw new InvalidOperationException(esContado
+                    ? "Falta CtaCajaId/CuentaCajaId en CajaContaConfig."
+                    : "Falta CtaClienteId en CajaContaConfig.");
+
+            if (ctas.CtaIngresoId is null || ctas.CtaIngresoId <= 0)
+                throw new InvalidOperationException("Falta CtaIngresoId en CajaContaConfig.");
+
+            // ITBIS puede ser 0, pero si hay ITBIS y no hay cuenta, fallo:
+            if (itbisMoneda != 0 && (ctas.CtaItbisId is null || ctas.CtaItbisId <= 0))
+                throw new InvalidOperationException("La venta tiene ITBIS pero falta CtaITBISId en CajaContaConfig.");
+
+            long movId;
+            string noAsiento;
+
+            // 1) Crear cabecera
+            using (var cmd = new SqlCommand("dbo.sp_Conta_Mov_Crear", cn, tx))
+            {
+                cmd.CommandType = CommandType.StoredProcedure;
+                cmd.Parameters.Add("@Fecha", SqlDbType.DateTime2).Value = fecha;
+                cmd.Parameters.Add("@Descripcion", SqlDbType.VarChar, 200).Value = $"Venta POS {ventaId}";
+                cmd.Parameters.Add("@Origen", SqlDbType.VarChar, 20).Value = "VENTA";
+                cmd.Parameters.Add("@OrigenId", SqlDbType.BigInt).Value = ventaId;
+                cmd.Parameters.Add("@Usuario", SqlDbType.NVarChar, 120).Value = usuario;
+                cmd.Parameters.Add("@MonedaCodigo", SqlDbType.VarChar, 3).Value = monedaCodigo;
+
+                var pTc = cmd.Parameters.Add("@TasaCambio", SqlDbType.Decimal);
+                pTc.Precision = 18; pTc.Scale = 6; pTc.Value = tasaCambio <= 0 ? 1 : tasaCambio;
+
+                var pMov = cmd.Parameters.Add("@MovimientoId", SqlDbType.BigInt);
+                pMov.Direction = ParameterDirection.Output;
+
+                var pNo = cmd.Parameters.Add("@NoAsiento", SqlDbType.VarChar, 30);
+                pNo.Direction = ParameterDirection.Output;
+
+                cmd.ExecuteNonQuery();
+
+                movId = Convert.ToInt64(pMov.Value);
+                noAsiento = Convert.ToString(pNo.Value) ?? "";
+            }
+
+            decimal totalMoneda = Math.Round(subtotalMoneda + itbisMoneda, 2);
+
+            // 2) Líneas (por CuentaId)
+            void AddLinea(int cuentaId, string desc, decimal debMon, decimal credMon)
+            {
+                using var cmd = new SqlCommand("dbo.sp_Conta_Mov_AddLinea", cn, tx);
+                cmd.CommandType = CommandType.StoredProcedure;
+                cmd.Parameters.Add("@MovimientoId", SqlDbType.BigInt).Value = movId;
+                cmd.Parameters.Add("@CuentaId", SqlDbType.Int).Value = cuentaId;
+                cmd.Parameters.Add("@Descripcion", SqlDbType.VarChar, 100).Value = desc;
+
+                var pDeb = cmd.Parameters.Add("@DebitoMoneda", SqlDbType.Decimal);
+                pDeb.Precision = 18; pDeb.Scale = 2; pDeb.Value = debMon;
+
+                var pCred = cmd.Parameters.Add("@CreditoMoneda", SqlDbType.Decimal);
+                pCred.Precision = 18; pCred.Scale = 2; pCred.Value = credMon;
+
+                cmd.ExecuteNonQuery();
+            }
+
+            AddLinea(cuentaDebe.Value, esContado ? "Caja venta POS" : "CxC venta POS", totalMoneda, 0m);
+            AddLinea(ctas.CtaIngresoId.Value, "Ingresos por venta", 0m, Math.Round(subtotalMoneda, 2));
+
+            if (itbisMoneda != 0)
+                AddLinea(ctas.CtaItbisId!.Value, "ITBIS por pagar", 0m, Math.Round(itbisMoneda, 2));
+
+            // 3) Cerrar
+            using (var cmd = new SqlCommand("dbo.sp_Conta_Mov_Cerrar", cn, tx))
+            {
+                cmd.CommandType = CommandType.StoredProcedure;
+                cmd.Parameters.Add("@MovimientoId", SqlDbType.BigInt).Value = movId;
+                cmd.ExecuteNonQuery();
+            }
+
+            // 4) Dejarlo CONTABILIZADO (para poder reversar luego si lo necesitas)
+            using (var cmd = new SqlCommand(@"
+UPDATE dbo.ContabilidadMovimientoCab
+SET Estado = 'CONTABILIZADO'
+WHERE MovimientoId = @MovimientoId;", cn, tx))
+            {
+                cmd.Parameters.Add("@MovimientoId", SqlDbType.BigInt).Value = movId;
+                cmd.ExecuteNonQuery();
+            }
+
+            // 5) Amarrar la venta con asiento + caja
+            using (var cmd = new SqlCommand(@"
+UPDATE dbo.VentaCab
+SET MovimientoIdConta = @MovimientoIdConta,
+    CajaId = @CajaId
+WHERE VentaId = @VentaId;", cn, tx))
+            {
+                cmd.Parameters.Add("@MovimientoIdConta", SqlDbType.BigInt).Value = movId;
+                cmd.Parameters.Add("@CajaId", SqlDbType.Int).Value = cajaId;
+                cmd.Parameters.Add("@VentaId", SqlDbType.BigInt).Value = ventaId;
+                cmd.ExecuteNonQuery();
+            }
+
+            return movId;
+        }
+
+        private sealed class CuentasCajaConta
+        {
+            public int CuentaCajaId { get; set; }
+            public int? CtaClienteId { get; set; }
+            public int? CtaIngresoId { get; set; }
+            public int? CtaITBISId { get; set; }
+        }
+
+        private CuentasCajaConta LeerCajaContaConfig(SqlConnection cn, SqlTransaction tx, int cajaId, string monedaCodigo)
+        {
+            using var cmd = new SqlCommand(@"
+SELECT TOP(1)
+    CuentaCajaId,
+    CtaClienteId,
+    CtaIngresoId,
+    CtaITBISId
+FROM dbo.CajaContaConfig
+WHERE CajaId = @CajaId AND MonedaCodigo = @Moneda;", cn, tx);
+
+            cmd.Parameters.Add("@CajaId", SqlDbType.Int).Value = cajaId;
+            cmd.Parameters.Add("@Moneda", SqlDbType.VarChar, 3).Value = monedaCodigo;
+
+            using var rd = cmd.ExecuteReader();
+            if (!rd.Read())
+                throw new InvalidOperationException(
+                    $"No existe CajaContaConfig para CajaId={cajaId} y Moneda={monedaCodigo}.");
+
+            return new CuentasCajaConta
+            {
+                CuentaCajaId = Convert.ToInt32(rd["CuentaCajaId"]),
+                CtaClienteId = rd["CtaClienteId"] == DBNull.Value ? null : Convert.ToInt32(rd["CtaClienteId"]),
+                CtaIngresoId = rd["CtaIngresoId"] == DBNull.Value ? null : Convert.ToInt32(rd["CtaIngresoId"]),
+                CtaITBISId = rd["CtaITBISId"] == DBNull.Value ? null : Convert.ToInt32(rd["CtaITBISId"]),
+            };
+        }
+
+        private string GetCodigoCuenta(SqlConnection cn, SqlTransaction tx, int cuentaId)
+        {
+            using var cmd = new SqlCommand(@"
+SELECT Codigo
+FROM dbo.ContabilidadCatalogoCuenta
+WHERE CuentaId = @CuentaId;", cn, tx);
+
+            cmd.Parameters.Add("@CuentaId", SqlDbType.Int).Value = cuentaId;
+
+            var obj = cmd.ExecuteScalar();
+            var codigo = obj == null || obj == DBNull.Value ? null : Convert.ToString(obj);
+
+            if (string.IsNullOrWhiteSpace(codigo))
+                throw new InvalidOperationException($"No se encontró Codigo en ContabilidadCatalogoCuenta para CuentaId={cuentaId}.");
+
+            codigo = codigo.Trim();
+
+            // sp_Conta_AsientoVenta usa varchar(15) para las cuentas (verificado en script).
+            if (codigo.Length > 15)
+                throw new InvalidOperationException($"El código de cuenta '{codigo}' excede 15 caracteres; ajusta el código o el SP.");
+
+            return codigo;
+        }
+
+        private long AsentarVentaPOS(
+            SqlConnection cn,
+            SqlTransaction tx,
+            long ventaId,
+            DateTime fecha,
+            string usuario,
+            string monedaCodigo,
+            decimal tasaCambio,
+            decimal subtotalMoneda,
+            decimal itbisMoneda,
+            int cajaId,
+            int terminoPagoId
+        )
+        {
+            // Regla mínima (sin inventar otra): si terminoPagoId == 1 => contado.
+            // Si luego tú manejas crédito real, aquí cambiamos la regla con tu tabla TerminoPago.
+            bool esContado = (terminoPagoId == 1);
+
+            var cfg = LeerCajaContaConfig(cn, tx, cajaId, monedaCodigo);
+
+            if (cfg.CtaIngresoId is null)
+                throw new InvalidOperationException("CajaContaConfig: falta CtaIngresoId.");
+            if (itbisMoneda != 0 && cfg.CtaITBISId is null)
+                throw new InvalidOperationException("CajaContaConfig: falta CtaITBISId y la venta tiene ITBIS.");
+            if (!esContado && cfg.CtaClienteId is null)
+                throw new InvalidOperationException("CajaContaConfig: falta CtaClienteId para ventas a crédito.");
+
+            var cuentaDebeId = esContado ? cfg.CuentaCajaId : cfg.CtaClienteId!.Value;
+
+            var cuentaDebeCodigo = GetCodigoCuenta(cn, tx, cuentaDebeId);
+            var cuentaIngresoCodigo = GetCodigoCuenta(cn, tx, cfg.CtaIngresoId.Value);
+            var cuentaItbisCodigo = (itbisMoneda != 0) ? GetCodigoCuenta(cn, tx, cfg.CtaITBISId!.Value) : "1.1.01"; // no se usa si itbisMoneda==0
+
+            long movId;
+            string noAsiento;
+
+            using (var cmd = new SqlCommand("dbo.sp_Conta_AsientoVenta", cn, tx))
+            {
+                cmd.CommandType = CommandType.StoredProcedure;
+
+                cmd.Parameters.Add("@Fecha", SqlDbType.DateTime2).Value = fecha;
+                cmd.Parameters.Add("@Origen", SqlDbType.VarChar, 20).Value = "VENTA";
+                cmd.Parameters.Add("@OrigenId", SqlDbType.BigInt).Value = ventaId;
+                cmd.Parameters.Add("@Usuario", SqlDbType.NVarChar, 120).Value = usuario;
+                cmd.Parameters.Add("@MonedaCodigo", SqlDbType.VarChar, 3).Value = monedaCodigo;
+
+                var pTc = cmd.Parameters.Add("@TasaCambio", SqlDbType.Decimal);
+                pTc.Precision = 18; pTc.Scale = 6; pTc.Value = (tasaCambio <= 0 ? 1m : tasaCambio);
+
+                var pSub = cmd.Parameters.Add("@SubtotalMoneda", SqlDbType.Decimal);
+                pSub.Precision = 18; pSub.Scale = 2; pSub.Value = subtotalMoneda;
+
+                var pItb = cmd.Parameters.Add("@ItbisMoneda", SqlDbType.Decimal);
+                pItb.Precision = 18; pItb.Scale = 2; pItb.Value = itbisMoneda;
+
+                // NOTA: el SP llama este parámetro @CuentaCxC, pero lo usamos como "cuenta debe"
+                // (caja si contado, cliente si crédito).
+                cmd.Parameters.Add("@CuentaCxC", SqlDbType.VarChar, 15).Value = cuentaDebeCodigo;
+                cmd.Parameters.Add("@CuentaIngreso", SqlDbType.VarChar, 15).Value = cuentaIngresoCodigo;
+                cmd.Parameters.Add("@CuentaITBIS", SqlDbType.VarChar, 15).Value = cuentaItbisCodigo;
+
+                var pMov = cmd.Parameters.Add("@MovimientoId", SqlDbType.BigInt);
+                pMov.Direction = ParameterDirection.Output;
+
+                var pNo = cmd.Parameters.Add("@NoAsiento", SqlDbType.VarChar, 30);
+                pNo.Direction = ParameterDirection.Output;
+
+                cmd.ExecuteNonQuery();
+
+                movId = Convert.ToInt64(pMov.Value);
+                noAsiento = Convert.ToString(pNo.Value) ?? "";
+            }
+
+            // Amarrar asiento + caja en VentaCab (verificado que existen estas columnas y FK).
+            using (var cmd = new SqlCommand(@"
+UPDATE dbo.VentaCab
+SET MovimientoIdConta = @MovId,
+    CajaId = @CajaId
+WHERE VentaId = @VentaId;", cn, tx))
+            {
+                cmd.Parameters.Add("@MovId", SqlDbType.BigInt).Value = movId;
+                cmd.Parameters.Add("@CajaId", SqlDbType.Int).Value = cajaId;
+                cmd.Parameters.Add("@VentaId", SqlDbType.BigInt).Value = ventaId;
+                cmd.ExecuteNonQuery();
+            }
+
+            return movId;
+        }
+
+
 
         // ================== CLIENTE ==================
 

@@ -1,12 +1,13 @@
-﻿using Andloe.Entidad.Facturacion;
+﻿using Andloe.Entidad;
+using Andloe.Entidad.Facturacion;
 using Microsoft.Data.SqlClient;
 using System;
 using System.Collections.Generic;
 using System.Data;
 using System.Linq;
-using System.Numerics;
 using System.Security.Cryptography;
 using System.Text;
+using Data;
 
 namespace Andloe.Data
 {
@@ -28,6 +29,11 @@ namespace Andloe.Data
         private const string CFG_ALMACEN_DEFECTO_ID = "ALMACEN_DEFECTO_ID";
         private const string CFG_FACTURA_SERIE = "FACTURA_SERIE";
         private const string CFG_STOCK_NEGATIVO = "STOCK_NEGATIVO";
+
+
+        public FacturaRepository()
+        {
+        }
 
         // =========================
         // Schema cache (por ejecución/tx)
@@ -97,6 +103,8 @@ WHERE Clave = @c;", cn, tx);
             return tipoDocumento;
         }
 
+
+
         private static string ResolveNumeradorCodigo(SqlConnection cn, SqlTransaction tx, string tipoDocumento)
         {
             tipoDocumento = (tipoDocumento ?? "").Trim().ToUpperInvariant();
@@ -146,6 +154,36 @@ WHERE Codigo=@cod;", cn, tx);
             if (lon <= 0) lon = lenFallback;
 
             return pref + act.ToString().PadLeft(lon, '0');
+        }
+
+        public DateTime? ObtenerFechaVencimientoSecuencia(int empresaId, int sucursalId, int? cajaId, int tipoId, string prefijo)
+        {
+            using var cn = Db.GetOpenConnection();
+
+            using var cmd = new SqlCommand(@"
+SELECT TOP 1 FechaVencimientoSecuencia
+FROM dbo.NCF_Rango
+WHERE EmpresaId = @EmpresaId
+  AND SucursalId = @SucursalId
+  AND (CajaId = @CajaId OR CajaId IS NULL)
+  AND TipoId = @TipoId
+  AND Prefijo = @Prefijo
+  AND ActivoParaEmisionECF = 1
+ORDER BY CASE WHEN CajaId IS NULL THEN 1 ELSE 0 END, RangoId DESC;
+", cn);
+
+            cmd.Parameters.Add("@EmpresaId", SqlDbType.Int).Value = empresaId;
+            cmd.Parameters.Add("@SucursalId", SqlDbType.Int).Value = sucursalId;
+            cmd.Parameters.Add("@CajaId", SqlDbType.Int).Value = (object?)cajaId ?? DBNull.Value;
+            cmd.Parameters.Add("@TipoId", SqlDbType.Int).Value = tipoId;
+            cmd.Parameters.Add("@Prefijo", SqlDbType.VarChar, 4).Value = prefijo;
+
+            var result = cmd.ExecuteScalar();
+
+            if (result == null || result == DBNull.Value)
+                return null;
+
+            return Convert.ToDateTime(result);
         }
 
         // ============================================================
@@ -229,26 +267,24 @@ WHERE FacturaId = @id;", cn, tx))
             }
         }
 
-
         private static void CrearInvMovimientoPorAnulacionFactura(int facturaId, string? usuario, SqlConnection cn, SqlTransaction tx, SchemaCache cache)
         {
             var usr = string.IsNullOrWhiteSpace(usuario) ? "SYSTEM" : usuario.Trim();
 
-            var items = LeerItemsFacturaAgrupados(facturaId, cn, tx);
-            if (items.Count == 0) return;
-
             var ctx = ObtenerContextoFactura(facturaId, cn, tx, cache);
             var almacenId = ctx.almacenId;
 
+            // 1. Crear cabecera del movimiento de anulación
             var invMovId = InsertInvMovimientoCab_AnulacionFactura(facturaId, usr, almacenId, cn, tx, cache);
 
-            // ✅ aquí sí pasamos el tipo para que el Lin calcule el signo bien
+            // 2. Leer líneas con información completa
             var items = LeerLineasFacturaDetParaInvMov(facturaId, cn, tx, cache);
+
+            if (items.Count == 0) return;
+
+            // 3. Insertar líneas del movimiento (tipo ANULACION_VENTA = entrada, cantidad positiva)
             InsertInvMovimientoLin(invMovId, facturaId, usr, items, "ANULACION_VENTA", cn, tx, cache);
-
-
         }
-        
 
         private static long InsertInvMovimientoCab_AnulacionFactura(int facturaId, string usuario, int almacenId, SqlConnection cn, SqlTransaction tx, SchemaCache cache)
         {
@@ -328,8 +364,6 @@ VALUES
             if (id <= 0) throw new InvalidOperationException("No se pudo generar InvMovId (anulación).");
             return id;
         }
-
-
 
 
         // ============================================================
@@ -999,6 +1033,31 @@ WHERE FacturaId = @id;", cn);
             cmd.ExecuteNonQuery();
         }
 
+        public void SetCodVendedorBorrador(int facturaId, string? codVendedor)
+        {
+            if (facturaId <= 0) return;
+
+            using var cn = Db.GetOpenConnection();
+
+            // si no existe la columna, no hacemos nada (sin error)
+            if (!HasColumn(cn, null, "dbo.FacturaCab", "CodVendedor"))
+                return;
+
+            codVendedor = string.IsNullOrWhiteSpace(codVendedor) ? null : codVendedor.Trim();
+
+            using var cmd = new SqlCommand(@"
+UPDATE dbo.FacturaCab
+SET CodVendedor = @cod
+WHERE FacturaId = @id
+  AND Estado = 'BORRADOR';", cn);
+
+            cmd.Parameters.Add("@id", SqlDbType.Int).Value = facturaId;
+            cmd.Parameters.Add("@cod", SqlDbType.VarChar, 20).Value = (object?)codVendedor ?? DBNull.Value;
+
+            cmd.ExecuteNonQuery();
+        }
+
+
        
 
         // ============================================================
@@ -1128,98 +1187,357 @@ ORDER BY FacturaDetId;", cn, tx);
 
             return list;
         }
+        private sealed class LineaFiscalData
+        {
+            public string CodigoItemFiscal { get; set; } = "";
+            public string DescripcionFiscal { get; set; } = "";
+            public string UnidadMedidaCodigo { get; set; } = "";
+            public int? UnidadMedidaECFId { get; set; }
+            public string UnidadMedidaDGII { get; set; } = "";
+            public int TipoProducto { get; set; } = 1;
+            public int IndicadorBienOServicio { get; set; } = 1;
+            public bool PrecioIncluyeITBIS { get; set; }
+            public bool EsExento { get; set; }
 
+            public decimal BaseImponible { get; set; }
+            public decimal MontoGravado { get; set; }
+            public decimal MontoExento { get; set; }
+            public decimal SubtotalLineaAntesImpuesto { get; set; }
+            public decimal ItbisMonto { get; set; }
+            public decimal TotalLinea { get; set; }
+            public int IndicadorITBISIncluido { get; set; }
+        }
 
+        private static decimal Round2(decimal value)
+            => Math.Round(value, 2, MidpointRounding.AwayFromZero);
 
-        // ============================================================
-        // ✅ DETALLE: Add / Update / Delete
-        // ============================================================
-        public int AddLineaConUnidad(
-            int facturaId,
-            string productoCodigo,
-            string? codBarra,
-            string descripcion,
-            string unidad,
-            int? impuestoId,
+        private static decimal CalcBaseBruta(decimal cantidad, decimal precioUnitario)
+            => Round2(cantidad * precioUnitario);
+
+        private static void AddOrSetDecimalParameter(SqlCommand cmd, string name, decimal? value, byte precision = 18, byte scale = 2)
+        {
+            if (cmd.Parameters.Contains(name))
+            {
+                cmd.Parameters[name].Value = (object?)value ?? DBNull.Value;
+                return;
+            }
+
+            var p = cmd.Parameters.Add(name, SqlDbType.Decimal);
+            p.Precision = precision;
+            p.Scale = scale;
+            p.Value = (object?)value ?? DBNull.Value;
+        }
+
+        private static void AddOrSetIntParameter(SqlCommand cmd, string name, int? value)
+        {
+            if (cmd.Parameters.Contains(name))
+            {
+                cmd.Parameters[name].Value = (object?)value ?? DBNull.Value;
+                return;
+            }
+
+            cmd.Parameters.Add(name, SqlDbType.Int).Value = (object?)value ?? DBNull.Value;
+        }
+
+        private static void AddOrSetStringParameter(SqlCommand cmd, string name, string? value, int size, SqlDbType dbType = SqlDbType.VarChar)
+        {
+            var val = string.IsNullOrWhiteSpace(value) ? (object)DBNull.Value : value.Trim();
+
+            if (cmd.Parameters.Contains(name))
+            {
+                cmd.Parameters[name].Value = val;
+                return;
+            }
+
+            cmd.Parameters.Add(name, dbType, size).Value = val;
+        }
+
+        private static Producto ObtenerProductoFiscalObligatorio(string productoCodigo)
+        {
+            var prodRepo = new ProductoRepository();
+            var producto = prodRepo.ObtenerPorCodigo(productoCodigo);
+
+            if (producto == null)
+                throw new InvalidOperationException($"No se encontró el producto '{productoCodigo}' para completar datos fiscales.");
+
+            producto.NormalizeDefaults();
+            return producto;
+        }
+
+        private static LineaFiscalData ConstruirLineaFiscalDesdeProducto(
+            Producto producto,
+            string descripcionLinea,
+            string unidadLinea,
             decimal cantidad,
             decimal precioUnitario,
-            decimal impuestoPctFallback,
-            decimal descuentoPct
-        )
+            decimal descuentoPct,
+            decimal impuestoPct)
+        {
+            if (producto == null)
+                throw new ArgumentNullException(nameof(producto));
+
+            producto.NormalizeDefaults();
+
+            descuentoPct = NormalizarPct(descuentoPct);
+            impuestoPct = NormalizarPct(impuestoPct);
+
+            var descripcionFiscal = string.IsNullOrWhiteSpace(producto.DescripcionFiscal)
+                ? (string.IsNullOrWhiteSpace(descripcionLinea) ? producto.Descripcion : descripcionLinea.Trim())
+                : producto.DescripcionFiscal.Trim();
+
+            var codigoItemFiscal = string.IsNullOrWhiteSpace(producto.CodigoItemFiscal)
+                ? producto.Codigo.Trim()
+                : producto.CodigoItemFiscal.Trim();
+
+            var unidadCodigo = string.IsNullOrWhiteSpace(producto.UnidadMedidaCodigo)
+                ? (string.IsNullOrWhiteSpace(unidadLinea) ? "UND" : unidadLinea.Trim().ToUpperInvariant())
+                : producto.UnidadMedidaCodigo.Trim().ToUpperInvariant();
+
+            var unidadDgii = string.IsNullOrWhiteSpace(producto.UnidadMedidaDGII)
+                ? unidadCodigo
+                : producto.UnidadMedidaDGII.Trim().ToUpperInvariant();
+
+            var tipoProducto = producto.TipoProducto is 1 or 2 ? producto.TipoProducto : 1;
+            var indicadorBienOServicio = tipoProducto == 2 ? 2 : 1;
+
+            var baseBruta = CalcBaseBruta(cantidad, precioUnitario);
+            var descuentoMonto = CalcDescuentoMonto(cantidad, precioUnitario, descuentoPct);
+            var subtotalAntesImpuesto = Round2(baseBruta - descuentoMonto);
+            if (subtotalAntesImpuesto < 0m) subtotalAntesImpuesto = 0m;
+
+            decimal baseImponible = 0m;
+            decimal montoGravado = 0m;
+            decimal montoExento = 0m;
+            decimal itbisMonto = 0m;
+
+            var esExento = producto.EsExento || !producto.ImpuestoId.HasValue || impuestoPct <= 0m;
+
+            if (esExento)
+            {
+                montoExento = subtotalAntesImpuesto;
+            }
+            else
+            {
+                baseImponible = subtotalAntesImpuesto;
+                montoGravado = subtotalAntesImpuesto;
+                itbisMonto = CalcItbisLineaSobreNeto(cantidad, precioUnitario, descuentoMonto, impuestoPct);
+            }
+
+            var totalLinea = Round2(subtotalAntesImpuesto + itbisMonto);
+
+            return new LineaFiscalData
+            {
+                CodigoItemFiscal = codigoItemFiscal,
+                DescripcionFiscal = descripcionFiscal,
+                UnidadMedidaCodigo = unidadCodigo,
+                UnidadMedidaECFId = producto.UnidadMedidaECFId,
+                UnidadMedidaDGII = unidadDgii,
+                TipoProducto = tipoProducto,
+                IndicadorBienOServicio = indicadorBienOServicio,
+                PrecioIncluyeITBIS = producto.PrecioIncluyeITBIS,
+                EsExento = esExento,
+                BaseImponible = baseImponible,
+                MontoGravado = montoGravado,
+                MontoExento = montoExento,
+                SubtotalLineaAntesImpuesto = subtotalAntesImpuesto,
+                ItbisMonto = itbisMonto,
+                TotalLinea = totalLinea,
+                IndicadorITBISIncluido = producto.PrecioIncluyeITBIS ? 1 : 0
+            };
+        }
+
+        private static HashSet<string> GetColumns(SqlConnection cn, string tableFullName, SqlTransaction tx)
+        {
+            var cache = new SchemaCache();
+            return GetColumns(cn, tx, tableFullName, cache);
+        }
+
+        public int AddLineaConUnidad(
+    int facturaId,
+    string productoCodigo,
+    string? codBarra,
+    string descripcion,
+    string unidad,
+    int? impuestoId,
+    decimal cantidad,
+    decimal precioUnitario,
+    decimal impuestoPctFallback,
+    decimal descuentoPct
+)
         {
             if (facturaId <= 0) throw new ArgumentException("facturaId inválido.");
             if (string.IsNullOrWhiteSpace(productoCodigo)) throw new ArgumentException("productoCodigo requerido.");
 
             productoCodigo = productoCodigo.Trim();
-            descripcion = (descripcion ?? "").Trim();
-            if (descripcion.Length > 150) descripcion = descripcion.Substring(0, 150);
 
-            unidad = (unidad ?? "").Trim();
-            if (unidad.Length > 10) unidad = unidad.Substring(0, 10);
+            var producto = ObtenerProductoFiscalObligatorio(productoCodigo);
+
+            descripcion = string.IsNullOrWhiteSpace(descripcion)
+                ? producto.Descripcion
+                : descripcion.Trim();
+
+            if (descripcion.Length > 150)
+                descripcion = descripcion.Substring(0, 150);
+
+            unidad = string.IsNullOrWhiteSpace(unidad)
+                ? producto.UnidadMedidaCodigo
+                : unidad.Trim().ToUpperInvariant();
+
+            if (unidad.Length > 10)
+                unidad = unidad.Substring(0, 10);
 
             var impTuple = ObtenerImpuestoPorProducto(productoCodigo, impuestoPctFallback);
-            var impIdFinal = impTuple.impuestoId ?? impuestoId;
-            var impPctFinal = impTuple.impuestoPct;
+            var impIdFinal = producto.EsExento ? null : (impTuple.impuestoId ?? impuestoId ?? producto.ImpuestoId);
+            var impPctFinal = producto.EsExento ? 0m : impTuple.impuestoPct;
 
             descuentoPct = NormalizarPct(descuentoPct);
             impPctFinal = NormalizarPct(impPctFinal);
 
             ValidarLinea(descripcion, cantidad, precioUnitario, impPctFinal);
 
+            var descMonto = CalcDescuentoMonto(cantidad, precioUnitario, descuentoPct);
+            var fiscal = ConstruirLineaFiscalDesdeProducto(
+                producto,
+                descripcion,
+                unidad,
+                cantidad,
+                precioUnitario,
+                descuentoPct,
+                impPctFinal
+            );
+
             using var cn = Db.GetOpenConnection();
             using var tx = cn.BeginTransaction();
 
             try
             {
-                var descMonto = CalcDescuentoMonto(cantidad, precioUnitario, descuentoPct);
-                var impuestoMonto = CalcItbisLineaSobreNeto(cantidad, precioUnitario, descMonto, impPctFinal);
-                var totalLinea = Math.Round((cantidad * precioUnitario) - descMonto + impuestoMonto, 2, MidpointRounding.AwayFromZero);
+                var detCols = GetColumns(cn, "dbo.FacturaDet", tx);
 
-                using var cmd = new SqlCommand(@"
+                var insertCols = new List<string>
+                {
+                    "FacturaId",
+                    "ProductoCodigo",
+                    "CodBarra",
+                    "Descripcion",
+                    "Unidad",
+                    "Cantidad",
+                    "PrecioUnitario",
+                    "DescuentoPct",
+                    "DescuentoMonto",
+                    "ImpuestoId",
+                    "ImpuestoPct",
+                    "ImpuestoMonto",
+                    "TotalLinea",
+                    "Precio",
+                    "ItbisPct",
+                    "ItbisMonto"
+                };
+
+                var insertVals = new List<string>
+                {
+                    "@id",
+                    "@prod",
+                    "@cb",
+                    "@desc",
+                    "@uni",
+                    "@cant",
+                    "@punit",
+                    "@dpct",
+                    "@dmto",
+                    "@impId",
+                    "@ipct",
+                    "@imto",
+                    "@tot",
+                    "@precio",
+                    "@itbispct",
+                    "@itbismto"
+                };
+
+                void AddOptional(string col, string param)
+                {
+                    if (detCols.Contains(col))
+                    {
+                        insertCols.Add(col);
+                        insertVals.Add(param);
+                    }
+                }
+
+                AddOptional("CodigoItemFiscal", "@CodigoItemFiscal");
+                AddOptional("DescripcionFiscal", "@DescripcionFiscal");
+                AddOptional("UnidadMedidaCodigo", "@UnidadMedidaCodigo");
+                AddOptional("UnidadMedidaECFId", "@UnidadMedidaECFId");
+                AddOptional("UnidadMedidaDGII", "@UnidadMedidaDGII");
+                AddOptional("TipoProducto", "@TipoProducto");
+                AddOptional("IndicadorBienOServicio", "@IndicadorBienOServicio");
+                AddOptional("IndicadorITBISIncluido", "@IndicadorITBISIncluido");
+                AddOptional("BaseImponible", "@BaseImponible");
+                AddOptional("MontoGravado", "@MontoGravado");
+                AddOptional("MontoExento", "@MontoExento");
+                AddOptional("SubtotalLineaAntesImpuesto", "@SubtotalLineaAntesImpuesto");
+
+                var sql = $@"
 INSERT INTO dbo.FacturaDet
 (
-    FacturaId, ProductoCodigo, CodBarra, Descripcion, Unidad,
-    Cantidad, PrecioUnitario,
-    DescuentoPct, DescuentoMonto,
-    ImpuestoId,
-    ImpuestoPct, ImpuestoMonto,
-    TotalLinea,
-    Precio, ItbisPct, ItbisMonto
+    {string.Join(", ", insertCols)}
 )
 OUTPUT INSERTED.FacturaDetId
 VALUES
 (
-    @id, @prod, @cb, @desc, @uni,
-    @cant, @punit,
-    @dpct, @dmto,
-    @impId,
-    @ipct, @imto,
-    @tot,
-    @precio, @itbispct, @itbismto
-);", cn, tx);
+    {string.Join(", ", insertVals)}
+);";
+
+                using var cmd = new SqlCommand(sql, cn, tx);
 
                 cmd.Parameters.Add("@id", SqlDbType.Int).Value = facturaId;
                 cmd.Parameters.Add("@prod", SqlDbType.VarChar, 20).Value = productoCodigo;
-                cmd.Parameters.Add("@cb", SqlDbType.VarChar, 50).Value = (object?)codBarra ?? DBNull.Value;
+                cmd.Parameters.Add("@cb", SqlDbType.VarChar, 50).Value = string.IsNullOrWhiteSpace(codBarra) ? (object)DBNull.Value : codBarra.Trim();
                 cmd.Parameters.Add("@desc", SqlDbType.NVarChar, 150).Value = descripcion;
                 cmd.Parameters.Add("@uni", SqlDbType.VarChar, 10).Value = unidad;
-
                 cmd.Parameters.Add("@impId", SqlDbType.Int).Value = (object?)impIdFinal ?? DBNull.Value;
 
-                var pCant = cmd.Parameters.Add("@cant", SqlDbType.Decimal); pCant.Precision = 18; pCant.Scale = 2; pCant.Value = cantidad;
-                var pUnit = cmd.Parameters.Add("@punit", SqlDbType.Decimal); pUnit.Precision = 18; pUnit.Scale = 2; pUnit.Value = precioUnitario;
+                var pCant = cmd.Parameters.Add("@cant", SqlDbType.Decimal);
+                pCant.Precision = 18; pCant.Scale = 2; pCant.Value = cantidad;
 
-                var pDpct = cmd.Parameters.Add("@dpct", SqlDbType.Decimal); pDpct.Precision = 9; pDpct.Scale = 4; pDpct.Value = descuentoPct;
-                var pDmto = cmd.Parameters.Add("@dmto", SqlDbType.Decimal); pDmto.Precision = 18; pDmto.Scale = 2; pDmto.Value = descMonto;
+                var pUnit = cmd.Parameters.Add("@punit", SqlDbType.Decimal);
+                pUnit.Precision = 18; pUnit.Scale = 2; pUnit.Value = precioUnitario;
 
-                var pIpct = cmd.Parameters.Add("@ipct", SqlDbType.Decimal); pIpct.Precision = 9; pIpct.Scale = 4; pIpct.Value = impPctFinal;
-                var pImto = cmd.Parameters.Add("@imto", SqlDbType.Decimal); pImto.Precision = 18; pImto.Scale = 2; pImto.Value = impuestoMonto;
+                var pDpct = cmd.Parameters.Add("@dpct", SqlDbType.Decimal);
+                pDpct.Precision = 9; pDpct.Scale = 4; pDpct.Value = descuentoPct;
 
-                var pTot = cmd.Parameters.Add("@tot", SqlDbType.Decimal); pTot.Precision = 18; pTot.Scale = 2; pTot.Value = totalLinea;
+                var pDmto = cmd.Parameters.Add("@dmto", SqlDbType.Decimal);
+                pDmto.Precision = 18; pDmto.Scale = 2; pDmto.Value = descMonto;
 
-                var pPrecio = cmd.Parameters.Add("@precio", SqlDbType.Decimal); pPrecio.Precision = 18; pPrecio.Scale = 2; pPrecio.Value = precioUnitario;
-                var pItbPct = cmd.Parameters.Add("@itbispct", SqlDbType.Decimal); pItbPct.Precision = 9; pItbPct.Scale = 4; pItbPct.Value = impPctFinal;
-                var pItbMto = cmd.Parameters.Add("@itbismto", SqlDbType.Decimal); pItbMto.Precision = 18; pItbMto.Scale = 2; pItbMto.Value = impuestoMonto;
+                var pIpct = cmd.Parameters.Add("@ipct", SqlDbType.Decimal);
+                pIpct.Precision = 9; pIpct.Scale = 4; pIpct.Value = impPctFinal;
+
+                var pImto = cmd.Parameters.Add("@imto", SqlDbType.Decimal);
+                pImto.Precision = 18; pImto.Scale = 2; pImto.Value = fiscal.ItbisMonto;
+
+                var pTot = cmd.Parameters.Add("@tot", SqlDbType.Decimal);
+                pTot.Precision = 18; pTot.Scale = 2; pTot.Value = fiscal.TotalLinea;
+
+                var pPrecio = cmd.Parameters.Add("@precio", SqlDbType.Decimal);
+                pPrecio.Precision = 18; pPrecio.Scale = 2; pPrecio.Value = precioUnitario;
+
+                var pItbPct = cmd.Parameters.Add("@itbispct", SqlDbType.Decimal);
+                pItbPct.Precision = 9; pItbPct.Scale = 4; pItbPct.Value = impPctFinal;
+
+                var pItbMto = cmd.Parameters.Add("@itbismto", SqlDbType.Decimal);
+                pItbMto.Precision = 18; pItbMto.Scale = 2; pItbMto.Value = fiscal.ItbisMonto;
+
+                AddOrSetStringParameter(cmd, "@CodigoItemFiscal", fiscal.CodigoItemFiscal, 50);
+                AddOrSetStringParameter(cmd, "@DescripcionFiscal", fiscal.DescripcionFiscal, 250, SqlDbType.NVarChar);
+                AddOrSetStringParameter(cmd, "@UnidadMedidaCodigo", fiscal.UnidadMedidaCodigo, 10);
+                AddOrSetIntParameter(cmd, "@UnidadMedidaECFId", fiscal.UnidadMedidaECFId);
+                AddOrSetStringParameter(cmd, "@UnidadMedidaDGII", fiscal.UnidadMedidaDGII, 10);
+                AddOrSetIntParameter(cmd, "@TipoProducto", fiscal.TipoProducto);
+                AddOrSetIntParameter(cmd, "@IndicadorBienOServicio", fiscal.IndicadorBienOServicio);
+                AddOrSetIntParameter(cmd, "@IndicadorITBISIncluido", fiscal.IndicadorITBISIncluido);
+
+                AddOrSetDecimalParameter(cmd, "@BaseImponible", fiscal.BaseImponible);
+                AddOrSetDecimalParameter(cmd, "@MontoGravado", fiscal.MontoGravado);
+                AddOrSetDecimalParameter(cmd, "@MontoExento", fiscal.MontoExento);
+                AddOrSetDecimalParameter(cmd, "@SubtotalLineaAntesImpuesto", fiscal.SubtotalLineaAntesImpuesto);
 
                 var detId = Convert.ToInt32(cmd.ExecuteScalar());
 
@@ -1234,86 +1552,194 @@ VALUES
             }
         }
 
+        // ============================================================
+        // ✅ DETALLE: Add / Update / Delete
+        // ============================================================
         public void UpdateLineaConUnidad(
-            int facturaDetId,
-            string descripcion,
-            string unidad,
-            decimal cantidad,
-            decimal precioUnitario,
-            decimal impuestoPct,
-            decimal descuentoPct
-        )
+    int facturaDetId,
+    string descripcion,
+    string unidad,
+    decimal cantidad,
+    decimal precioUnitario,
+    decimal impuestoPct,
+    decimal descuentoPct
+)
+    {
+        impuestoPct = NormalizarPct(impuestoPct);
+        descuentoPct = NormalizarPct(descuentoPct);
+        ValidarLinea(descripcion, cantidad, precioUnitario, impuestoPct);
+
+        using var cn = Db.GetOpenConnection();
+        using var tx = cn.BeginTransaction();
+
+        try
         {
-            impuestoPct = NormalizarPct(impuestoPct);
-            descuentoPct = NormalizarPct(descuentoPct);
-            ValidarLinea(descripcion, cantidad, precioUnitario, impuestoPct);
+            int facturaId;
+            string productoCodigo;
+            int? impuestoIdActual = null;
 
-            unidad = string.IsNullOrWhiteSpace(unidad) ? "" : unidad.Trim();
-            if (unidad.Length > 10) unidad = unidad.Substring(0, 10);
-
-            using var cn = Db.GetOpenConnection();
-            using var tx = cn.BeginTransaction();
-
-            try
+            using (var cmdGet = new SqlCommand(@"
+SELECT TOP (1)
+    FacturaId,
+    ProductoCodigo,
+    ImpuestoId
+FROM dbo.FacturaDet
+WHERE FacturaDetId = @det;", cn, tx))
             {
-                int facturaId = GetFacturaIdByDet(facturaDetId, cn, tx);
+                cmdGet.Parameters.Add("@det", SqlDbType.Int).Value = facturaDetId;
 
-                var descMonto = CalcDescuentoMonto(cantidad, precioUnitario, descuentoPct);
-                var impuestoMonto = CalcItbisLineaSobreNeto(cantidad, precioUnitario, descMonto, impuestoPct);
-                var totalLinea = Math.Round((cantidad * precioUnitario) - descMonto + impuestoMonto, 2, MidpointRounding.AwayFromZero);
+                using var rd = cmdGet.ExecuteReader();
+                if (!rd.Read())
+                    throw new InvalidOperationException("Detalle no existe.");
 
-                using var cmd = new SqlCommand(@"
+                facturaId = rd.IsDBNull(0) ? 0 : Convert.ToInt32(rd.GetValue(0));
+                productoCodigo = rd.IsDBNull(1) ? "" : Convert.ToString(rd.GetValue(1)) ?? "";
+                impuestoIdActual = rd.IsDBNull(2) ? (int?)null : Convert.ToInt32(rd.GetValue(2));
+            }
+
+            if (facturaId <= 0 || string.IsNullOrWhiteSpace(productoCodigo))
+                throw new InvalidOperationException("No se pudo obtener información fiscal del detalle.");
+
+            var producto = ObtenerProductoFiscalObligatorio(productoCodigo);
+
+            descripcion = string.IsNullOrWhiteSpace(descripcion)
+                ? producto.Descripcion
+                : descripcion.Trim();
+
+            if (descripcion.Length > 150)
+                descripcion = descripcion.Substring(0, 150);
+
+            unidad = string.IsNullOrWhiteSpace(unidad)
+                ? producto.UnidadMedidaCodigo
+                : unidad.Trim().ToUpperInvariant();
+
+            if (unidad.Length > 10)
+                unidad = unidad.Substring(0, 10);
+
+            var impTuple = ObtenerImpuestoPorProducto(productoCodigo, impuestoPct);
+            var impIdFinal = producto.EsExento ? null : (impTuple.impuestoId ?? impuestoIdActual ?? producto.ImpuestoId);
+            var impPctFinal = producto.EsExento ? 0m : impTuple.impuestoPct;
+            impPctFinal = NormalizarPct(impPctFinal);
+
+            var descMonto = CalcDescuentoMonto(cantidad, precioUnitario, descuentoPct);
+            var fiscal = ConstruirLineaFiscalDesdeProducto(
+                producto,
+                descripcion,
+                unidad,
+                cantidad,
+                precioUnitario,
+                descuentoPct,
+                impPctFinal
+            );
+
+            var detCols = GetColumns(cn, "dbo.FacturaDet", tx);
+
+            var setParts = new List<string>
+                {
+                    "Descripcion = @desc",
+                    "Unidad = @uni",
+                    "Cantidad = @cant",
+                    "PrecioUnitario = @punit",
+                    "DescuentoPct = @dpct",
+                    "DescuentoMonto = @dmto",
+                    "ImpuestoId = @impId",
+                    "ImpuestoPct = @ipct",
+                    "ImpuestoMonto = @imto",
+                    "TotalLinea = @tot",
+                    "Precio = @precio",
+                    "ItbisPct = @itbispct",
+                    "ItbisMonto = @itbismto"
+                };
+
+            void AddOptionalSet(string col, string param)
+            {
+                if (detCols.Contains(col))
+                    setParts.Add($"{col} = {param}");
+            }
+
+            AddOptionalSet("CodigoItemFiscal", "@CodigoItemFiscal");
+            AddOptionalSet("DescripcionFiscal", "@DescripcionFiscal");
+            AddOptionalSet("UnidadMedidaCodigo", "@UnidadMedidaCodigo");
+            AddOptionalSet("UnidadMedidaECFId", "@UnidadMedidaECFId");
+            AddOptionalSet("UnidadMedidaDGII", "@UnidadMedidaDGII");
+            AddOptionalSet("TipoProducto", "@TipoProducto");
+            AddOptionalSet("IndicadorBienOServicio", "@IndicadorBienOServicio");
+            AddOptionalSet("IndicadorITBISIncluido", "@IndicadorITBISIncluido");
+            AddOptionalSet("BaseImponible", "@BaseImponible");
+            AddOptionalSet("MontoGravado", "@MontoGravado");
+            AddOptionalSet("MontoExento", "@MontoExento");
+            AddOptionalSet("SubtotalLineaAntesImpuesto", "@SubtotalLineaAntesImpuesto");
+
+            var sql = $@"
 UPDATE dbo.FacturaDet
-SET Descripcion    = @desc,
-    Unidad         = @uni,
-    Cantidad       = @cant,
-    PrecioUnitario = @punit,
-    DescuentoPct   = @dpct,
-    DescuentoMonto = @dmto,
-    ImpuestoPct    = @ipct,
-    ImpuestoMonto  = @imto,
-    TotalLinea     = @tot,
-    Precio         = @precio,
-    ItbisPct       = @itbispct,
-    ItbisMonto     = @itbismto
-WHERE FacturaDetId = @det;", cn, tx);
+SET {string.Join("," + Environment.NewLine + "    ", setParts)}
+WHERE FacturaDetId = @det;";
 
-                cmd.Parameters.Add("@det", SqlDbType.Int).Value = facturaDetId;
+            using var cmd = new SqlCommand(sql, cn, tx);
 
-                var desc = (descripcion ?? "").Trim();
-                if (desc.Length > 150) desc = desc.Substring(0, 150);
-                cmd.Parameters.Add("@desc", SqlDbType.NVarChar, 150).Value = desc;
+            cmd.Parameters.Add("@det", SqlDbType.Int).Value = facturaDetId;
+            cmd.Parameters.Add("@desc", SqlDbType.NVarChar, 150).Value = descripcion;
+            cmd.Parameters.Add("@uni", SqlDbType.VarChar, 10).Value = unidad;
+            cmd.Parameters.Add("@impId", SqlDbType.Int).Value = (object?)impIdFinal ?? DBNull.Value;
 
-                cmd.Parameters.Add("@uni", SqlDbType.VarChar, 10).Value = unidad;
+            var pCant = cmd.Parameters.Add("@cant", SqlDbType.Decimal);
+            pCant.Precision = 18; pCant.Scale = 2; pCant.Value = cantidad;
 
-                var pCant = cmd.Parameters.Add("@cant", SqlDbType.Decimal); pCant.Precision = 18; pCant.Scale = 2; pCant.Value = cantidad;
-                var pUnit = cmd.Parameters.Add("@punit", SqlDbType.Decimal); pUnit.Precision = 18; pUnit.Scale = 2; pUnit.Value = precioUnitario;
+            var pUnit = cmd.Parameters.Add("@punit", SqlDbType.Decimal);
+            pUnit.Precision = 18; pUnit.Scale = 2; pUnit.Value = precioUnitario;
 
-                var pDpct = cmd.Parameters.Add("@dpct", SqlDbType.Decimal); pDpct.Precision = 9; pDpct.Scale = 4; pDpct.Value = descuentoPct;
-                var pDmto = cmd.Parameters.Add("@dmto", SqlDbType.Decimal); pDmto.Precision = 18; pDmto.Scale = 2; pDmto.Value = descMonto;
+            var pDpct = cmd.Parameters.Add("@dpct", SqlDbType.Decimal);
+            pDpct.Precision = 9; pDpct.Scale = 4; pDpct.Value = descuentoPct;
 
-                var pIpct = cmd.Parameters.Add("@ipct", SqlDbType.Decimal); pIpct.Precision = 9; pIpct.Scale = 4; pIpct.Value = impuestoPct;
-                var pImto = cmd.Parameters.Add("@imto", SqlDbType.Decimal); pImto.Precision = 18; pImto.Scale = 2; pImto.Value = impuestoMonto;
+            var pDmto = cmd.Parameters.Add("@dmto", SqlDbType.Decimal);
+            pDmto.Precision = 18; pDmto.Scale = 2; pDmto.Value = descMonto;
 
-                var pTot = cmd.Parameters.Add("@tot", SqlDbType.Decimal); pTot.Precision = 18; pTot.Scale = 2; pTot.Value = totalLinea;
+            var pIpct = cmd.Parameters.Add("@ipct", SqlDbType.Decimal);
+            pIpct.Precision = 9; pIpct.Scale = 4; pIpct.Value = impPctFinal;
 
-                var pPrecio = cmd.Parameters.Add("@precio", SqlDbType.Decimal); pPrecio.Precision = 18; pPrecio.Scale = 2; pPrecio.Value = precioUnitario;
-                var pItbPct = cmd.Parameters.Add("@itbispct", SqlDbType.Decimal); pItbPct.Precision = 9; pItbPct.Scale = 4; pItbPct.Value = impuestoPct;
-                var pItbMto = cmd.Parameters.Add("@itbismto", SqlDbType.Decimal); pItbMto.Precision = 18; pItbMto.Scale = 2; pItbMto.Value = impuestoMonto;
+            var pImto = cmd.Parameters.Add("@imto", SqlDbType.Decimal);
+            pImto.Precision = 18; pImto.Scale = 2; pImto.Value = fiscal.ItbisMonto;
 
-                cmd.ExecuteNonQuery();
+            var pTot = cmd.Parameters.Add("@tot", SqlDbType.Decimal);
+            pTot.Precision = 18; pTot.Scale = 2; pTot.Value = fiscal.TotalLinea;
 
-                RecalcularTotales(facturaId, cn, tx);
-                tx.Commit();
-            }
-            catch
-            {
-                tx.Rollback();
-                throw;
-            }
+            var pPrecio = cmd.Parameters.Add("@precio", SqlDbType.Decimal);
+            pPrecio.Precision = 18; pPrecio.Scale = 2; pPrecio.Value = precioUnitario;
+
+            var pItbPct = cmd.Parameters.Add("@itbispct", SqlDbType.Decimal);
+            pItbPct.Precision = 9; pItbPct.Scale = 4; pItbPct.Value = impPctFinal;
+
+            var pItbMto = cmd.Parameters.Add("@itbismto", SqlDbType.Decimal);
+            pItbMto.Precision = 18; pItbMto.Scale = 2; pItbMto.Value = fiscal.ItbisMonto;
+
+            AddOrSetStringParameter(cmd, "@CodigoItemFiscal", fiscal.CodigoItemFiscal, 50);
+            AddOrSetStringParameter(cmd, "@DescripcionFiscal", fiscal.DescripcionFiscal, 250, SqlDbType.NVarChar);
+            AddOrSetStringParameter(cmd, "@UnidadMedidaCodigo", fiscal.UnidadMedidaCodigo, 10);
+            AddOrSetIntParameter(cmd, "@UnidadMedidaECFId", fiscal.UnidadMedidaECFId);
+            AddOrSetStringParameter(cmd, "@UnidadMedidaDGII", fiscal.UnidadMedidaDGII, 10);
+            AddOrSetIntParameter(cmd, "@TipoProducto", fiscal.TipoProducto);
+            AddOrSetIntParameter(cmd, "@IndicadorBienOServicio", fiscal.IndicadorBienOServicio);
+            AddOrSetIntParameter(cmd, "@IndicadorITBISIncluido", fiscal.IndicadorITBISIncluido);
+
+            AddOrSetDecimalParameter(cmd, "@BaseImponible", fiscal.BaseImponible);
+            AddOrSetDecimalParameter(cmd, "@MontoGravado", fiscal.MontoGravado);
+            AddOrSetDecimalParameter(cmd, "@MontoExento", fiscal.MontoExento);
+            AddOrSetDecimalParameter(cmd, "@SubtotalLineaAntesImpuesto", fiscal.SubtotalLineaAntesImpuesto);
+
+            cmd.ExecuteNonQuery();
+
+            RecalcularTotales(facturaId, cn, tx);
+            tx.Commit();
         }
+        catch
+        {
+            tx.Rollback();
+            throw;
+        }
+    }
 
-        public void DeleteLinea(int facturaDetId)
+   
+    public void DeleteLinea(int facturaDetId)
         {
             using var cn = Db.GetOpenConnection();
             using var tx = cn.BeginTransaction();
@@ -1341,6 +1767,114 @@ WHERE FacturaDetId = @det;", cn, tx);
         // ============================================================
         // ✅ FINALIZAR
         // ============================================================
+        public void SetDatosFiscalesBorrador(
+            int facturaId,
+            int tipoEcfId,
+            int tipoIngresoId,
+            int tipoPagoEcfId,
+            bool esElectronica,
+            string? encf,
+            DateTime? fechaVencimientoSecuencia,
+            int? indicadorMontoGravado,
+            string? rncCompradorSnapshot,
+            string? razonSocialCompradorSnapshot,
+            string? correoCompradorSnapshot,
+            string? direccionCompradorSnapshot,
+            string? municipioCompradorSnapshot,
+            string? provinciaCompradorSnapshot,
+            decimal? montoGravadoTotal,
+            decimal? montoExentoTotal,
+            decimal? totalItbisRetenido,
+            decimal? totalIsrRetencion,
+            decimal? totalOtrosImpuestos,
+            string? estadoEcf,
+            int? tipoPagoEcfHeader,
+            DateTime? fechaLimitePago,
+            string? identificadorExtranjeroSnapshot)
+        {
+            if (facturaId <= 0) throw new ArgumentException("facturaId inválido.");
+
+            using var cn = Db.GetOpenConnection();
+
+            using var cmd = new SqlCommand(@"
+UPDATE dbo.FacturaCab
+SET TipoECFId = @TipoECFId,
+    TipoIngresoId = @TipoIngresoId,
+    TipoPagoECFId = @TipoPagoECFId,
+    EsElectronica = @EsElectronica,
+    eNCF = @eNCF,
+    FechaVencimientoSecuencia = @FechaVencimientoSecuencia,
+    IndicadorMontoGravado = @IndicadorMontoGravado,
+    RncCompradorSnapshot = @RncCompradorSnapshot,
+    RazonSocialCompradorSnapshot = @RazonSocialCompradorSnapshot,
+    CorreoCompradorSnapshot = @CorreoCompradorSnapshot,
+    DireccionCompradorSnapshot = @DireccionCompradorSnapshot,
+    MunicipioCompradorSnapshot = @MunicipioCompradorSnapshot,
+    ProvinciaCompradorSnapshot = @ProvinciaCompradorSnapshot,
+    MontoGravadoTotal = @MontoGravadoTotal,
+    MontoExentoTotal = @MontoExentoTotal,
+    TotalITBISRetenido = @TotalITBISRetenido,
+    TotalISRRetencion = @TotalISRRetencion,
+    TotalOtrosImpuestos = @TotalOtrosImpuestos,
+    EstadoECF = @EstadoECF,
+    TipoPagoECFHeader = @TipoPagoECFHeader,
+    FechaLimitePago = @FechaLimitePago,
+    IdentificadorExtranjeroSnapshot = @IdentificadorExtranjeroSnapshot
+WHERE FacturaId = @FacturaId
+  AND Estado = 'BORRADOR';", cn);
+
+            cmd.Parameters.Add("@FacturaId", SqlDbType.Int).Value = facturaId;
+            cmd.Parameters.Add("@TipoECFId", SqlDbType.Int).Value = tipoEcfId;
+            cmd.Parameters.Add("@TipoIngresoId", SqlDbType.Int).Value = tipoIngresoId;
+            cmd.Parameters.Add("@TipoPagoECFId", SqlDbType.Int).Value = tipoPagoEcfId;
+            cmd.Parameters.Add("@EsElectronica", SqlDbType.Bit).Value = esElectronica;
+            cmd.Parameters.Add("@eNCF", SqlDbType.VarChar, 20).Value =
+                string.IsNullOrWhiteSpace(encf) ? (object)DBNull.Value : encf.Trim();
+            cmd.Parameters.Add("@FechaVencimientoSecuencia", SqlDbType.Date).Value =
+                (object?)fechaVencimientoSecuencia ?? DBNull.Value;
+            cmd.Parameters.Add("@IndicadorMontoGravado", SqlDbType.Int).Value =
+                (object?)indicadorMontoGravado ?? DBNull.Value;
+
+            cmd.Parameters.Add("@RncCompradorSnapshot", SqlDbType.VarChar, 20).Value =
+                string.IsNullOrWhiteSpace(rncCompradorSnapshot) ? (object)DBNull.Value : rncCompradorSnapshot.Trim();
+            cmd.Parameters.Add("@RazonSocialCompradorSnapshot", SqlDbType.NVarChar, 200).Value =
+                string.IsNullOrWhiteSpace(razonSocialCompradorSnapshot) ? (object)DBNull.Value : razonSocialCompradorSnapshot.Trim();
+            cmd.Parameters.Add("@CorreoCompradorSnapshot", SqlDbType.NVarChar, 200).Value =
+                string.IsNullOrWhiteSpace(correoCompradorSnapshot) ? (object)DBNull.Value : correoCompradorSnapshot.Trim();
+            cmd.Parameters.Add("@DireccionCompradorSnapshot", SqlDbType.NVarChar, 300).Value =
+                string.IsNullOrWhiteSpace(direccionCompradorSnapshot) ? (object)DBNull.Value : direccionCompradorSnapshot.Trim();
+            cmd.Parameters.Add("@MunicipioCompradorSnapshot", SqlDbType.NVarChar, 100).Value =
+                string.IsNullOrWhiteSpace(municipioCompradorSnapshot) ? (object)DBNull.Value : municipioCompradorSnapshot.Trim();
+            cmd.Parameters.Add("@ProvinciaCompradorSnapshot", SqlDbType.NVarChar, 100).Value =
+                string.IsNullOrWhiteSpace(provinciaCompradorSnapshot) ? (object)DBNull.Value : provinciaCompradorSnapshot.Trim();
+
+            var pMg = cmd.Parameters.Add("@MontoGravadoTotal", SqlDbType.Decimal);
+            pMg.Precision = 18; pMg.Scale = 2; pMg.Value = (object?)montoGravadoTotal ?? DBNull.Value;
+
+            var pMe = cmd.Parameters.Add("@MontoExentoTotal", SqlDbType.Decimal);
+            pMe.Precision = 18; pMe.Scale = 2; pMe.Value = (object?)montoExentoTotal ?? DBNull.Value;
+
+            var pItbisRet = cmd.Parameters.Add("@TotalITBISRetenido", SqlDbType.Decimal);
+            pItbisRet.Precision = 18; pItbisRet.Scale = 2; pItbisRet.Value = (object?)totalItbisRetenido ?? DBNull.Value;
+
+            var pIsrRet = cmd.Parameters.Add("@TotalISRRetencion", SqlDbType.Decimal);
+            pIsrRet.Precision = 18; pIsrRet.Scale = 2; pIsrRet.Value = (object?)totalIsrRetencion ?? DBNull.Value;
+
+            var pOtros = cmd.Parameters.Add("@TotalOtrosImpuestos", SqlDbType.Decimal);
+            pOtros.Precision = 18; pOtros.Scale = 2; pOtros.Value = (object?)totalOtrosImpuestos ?? DBNull.Value;
+
+            cmd.Parameters.Add("@EstadoECF", SqlDbType.VarChar, 20).Value =
+                string.IsNullOrWhiteSpace(estadoEcf) ? (object)DBNull.Value : estadoEcf.Trim();
+            cmd.Parameters.Add("@TipoPagoECFHeader", SqlDbType.Int).Value =
+                (object?)tipoPagoEcfHeader ?? DBNull.Value;
+            cmd.Parameters.Add("@FechaLimitePago", SqlDbType.Date).Value =
+                (object?)fechaLimitePago ?? DBNull.Value;
+            cmd.Parameters.Add("@IdentificadorExtranjeroSnapshot", SqlDbType.VarChar, 40).Value =
+                string.IsNullOrWhiteSpace(identificadorExtranjeroSnapshot) ? (object)DBNull.Value : identificadorExtranjeroSnapshot.Trim();
+
+            cmd.ExecuteNonQuery();
+        }
+
         public string Finalizar(int facturaId, bool esCredito, int? terminoPagoId, int? diasCreditoManual, string usuarioFinaliza)
             => Finalizar(facturaId, esCredito, terminoPagoId, diasCreditoManual, usuarioFinaliza, permitirStockNegativo: false);
 
@@ -1447,6 +1981,44 @@ WHERE FacturaId = @id;", cn, tx))
                     }
                 }
 
+                using (var cmdFiscal = new SqlCommand(@"
+UPDATE dbo.FacturaCab
+SET TipoPagoECFId = CASE
+                        WHEN TipoPagoECFId IS NULL OR TipoPagoECFId = 0
+                        THEN CASE WHEN @esCredito = 1 THEN 2 ELSE 1 END
+                        ELSE TipoPagoECFId
+                    END,
+    TipoPagoECFHeader = CASE
+                            WHEN TipoPagoECFHeader IS NULL OR TipoPagoECFHeader = 0
+                            THEN CASE WHEN @esCredito = 1 THEN 2 ELSE 1 END
+                            ELSE TipoPagoECFHeader
+                        END,
+    EsElectronica = CASE
+                        WHEN eNCF IS NOT NULL AND LTRIM(RTRIM(eNCF)) <> '' THEN 1
+                        ELSE ISNULL(EsElectronica, 0)
+                    END,
+    FechaVencimientoSecuencia = CASE
+                                    WHEN FechaVencimientoSecuencia IS NULL AND eNCF IS NOT NULL AND LTRIM(RTRIM(eNCF)) <> ''
+                                    THEN CONVERT(date, '2099-12-31')
+                                    ELSE FechaVencimientoSecuencia
+                                END,
+    FechaLimitePago = CASE
+                          WHEN @esCredito = 1 THEN ISNULL(@venc, FechaLimitePago)
+                          ELSE FechaLimitePago
+                      END,
+    EstadoECF = CASE
+                    WHEN eNCF IS NOT NULL AND LTRIM(RTRIM(eNCF)) <> '' AND (EstadoECF IS NULL OR LTRIM(RTRIM(EstadoECF)) = '')
+                    THEN 'PENDIENTE'
+                    ELSE EstadoECF
+                END
+WHERE FacturaId = @id;", cn, tx))
+                {
+                    cmdFiscal.Parameters.Add("@id", SqlDbType.Int).Value = facturaId;
+                    cmdFiscal.Parameters.Add("@esCredito", SqlDbType.Bit).Value = esCredito;
+                    cmdFiscal.Parameters.Add("@venc", SqlDbType.DateTime).Value = (object?)fechaVenc ?? DBNull.Value;
+                    cmdFiscal.ExecuteNonQuery();
+                }
+
                 using (var cmd = new SqlCommand(@"
 UPDATE dbo.FacturaCab
 SET NumeroDocumento  = @num,
@@ -1469,6 +2041,8 @@ WHERE FacturaId=@id;", cn, tx))
                     cmd.Parameters.Add("@usr", SqlDbType.VarChar, 30).Value = usr;
                     cmd.ExecuteNonQuery();
                 }
+
+               
 
                 tx.Commit();
                 return numero;
@@ -1673,16 +2247,16 @@ VALUES ({string.Join(",", insertVals)});", cn, tx);
         {
             var usr = string.IsNullOrWhiteSpace(usuario) ? "SYSTEM" : usuario.Trim();
 
-            var items = LeerItemsFacturaAgrupados(facturaId, cn, tx);
+            // 1. Crear cabecera del movimiento
+            var invMovId = InsertInvMovimientoCab(facturaId, usr, cn, tx, cache);
+
+            // 2. Leer líneas con información completa
+            var items = LeerLineasFacturaDetParaInvMov(facturaId, cn, tx, cache);
+
             if (items.Count == 0) return;
 
-            var items = LeerLineasFacturaDetParaInvMov(facturaId, cn, tx, cache);
+            // 3. Insertar líneas del movimiento (tipo VENTA = salida, cantidad negativa)
             InsertInvMovimientoLin(invMovId, facturaId, usr, items, "VENTA", cn, tx, cache);
-
-
-
-
-
         }
 
         private static List<(string ProductoCodigo, decimal Cantidad)> LeerItemsFacturaAgrupados(int facturaId, SqlConnection cn, SqlTransaction tx)
@@ -2172,10 +2746,12 @@ VALUES
 
             var hasDir = HasColumn(cn, null, "dbo.FacturaCab", "DireccionCliente");
 
+            var hasVen = HasColumn(cn, null, "dbo.FacturaCab", "CodVendedor");
+
             var sql = @"
 SELECT TOP(1)
     FacturaId, TipoDocumento, NumeroDocumento, FechaDocumento, FechaVencimiento,
-    ClienteId, NombreCliente, DocumentoCliente," + (hasDir ? " DireccionCliente," : "") + @"
+    ClienteId, NombreCliente, DocumentoCliente," + (hasDir ? " DireccionCliente," : "") + (hasVen ? " CodVendedor," : "") + @"
     ISNULL(SubTotal,0), ISNULL(TotalDescuento,0), ISNULL(TotalImpuesto,0), ISNULL(TotalGeneral,0),
     TipoPago, TerminoPagoId, DiasCredito, Estado, Observacion,
     eNCF, TrackId, CodigoSeguridad
@@ -2218,6 +2794,14 @@ ORDER BY FacturaId DESC;";
             }
             else dto.DireccionCliente = null;
 
+            if (hasVen)
+            {
+                dto.CodVendedor = rd.IsDBNull(i) ? null : rd.GetString(i);
+                i++;
+            }
+            else dto.CodVendedor = null;
+
+
             dto.SubTotal = SafeGetDecimal(rd, i++);
             dto.TotalDescuento = SafeGetDecimal(rd, i++);
             dto.TotalImpuesto = SafeGetDecimal(rd, i++);
@@ -2253,10 +2837,12 @@ ORDER BY FacturaId DESC;";
 
             var hasDir = HasColumn(cn, null, "dbo.FacturaCab", "DireccionCliente");
 
+            var hasVen = HasColumn(cn, null, "dbo.FacturaCab", "CodVendedor");
+
             var sql = @"
 SELECT
     FacturaId, TipoDocumento, NumeroDocumento, FechaDocumento, FechaVencimiento,
-    ClienteId, NombreCliente, DocumentoCliente," + (hasDir ? " DireccionCliente," : "") + @"
+    ClienteId, NombreCliente, DocumentoCliente," + (hasDir ? " DireccionCliente," : "") + (hasVen ? " CodVendedor," : "") + @"
     ISNULL(SubTotal,0), ISNULL(TotalDescuento,0), ISNULL(TotalImpuesto,0), ISNULL(TotalGeneral,0),
     TipoPago, TerminoPagoId, DiasCredito, Estado, Observacion,
     eNCF, TrackId, CodigoSeguridad
@@ -2297,6 +2883,14 @@ WHERE FacturaId=@id;";
                 i++;
             }
             else dto.DireccionCliente = null;
+
+            if (hasVen)
+            {
+                dto.CodVendedor = rd.IsDBNull(i) ? null : rd.GetString(i);
+                i++;
+            }
+            else dto.CodVendedor = null;
+
 
             dto.SubTotal = SafeGetDecimal(rd, i++);
             dto.TotalDescuento = SafeGetDecimal(rd, i++);
@@ -2421,12 +3015,10 @@ WHERE ProductoCodigo = @prod
             }
         }
 
+        
 
-        // ============================================================
-        // ✅ DIRECCION CLIENTE (persistencia en FacturaCab)
-        //    - No depende del DTO (FacturaCabDto no tiene la propiedad)
-        //    - No truena si la columna no existe
-        // ============================================================
+
+        
 
 
         public string? ObtenerDireccionCliente(int facturaId)
@@ -2451,12 +3043,7 @@ WHERE FacturaId = @id;", cn);
             return string.IsNullOrWhiteSpace(s) ? null : s.Trim();
         }
 
-        public class FacturaCompletaDto
-        {
-            public FacturaCabDto Cab { get; set; } = new FacturaCabDto();
-            public List<FacturaDetDto> Det { get; set; } = new List<FacturaDetDto>();
-        }
-
+        
         public List<FacturaDetDto> ListarDet(int facturaId)
         {
             var list = new List<FacturaDetDto>();
@@ -2527,8 +3114,7 @@ ORDER BY FacturaDetId;", cn);
             return list;
         }
 
-
-
+       
         public FacturaCompletaDto? ObtenerCompleta(int facturaId)
         {
             var cab = ObtenerCab(facturaId);
@@ -2538,6 +3124,246 @@ ORDER BY FacturaDetId;", cn);
 
             return new FacturaCompletaDto { Cab = cab, Det = det };
         }
+    
+
+    // ============================================================
+// ✅ e-CF: snapshot comprador + validación + XML base
+// ============================================================
+private void EjecutarSnapshotComprador(SqlConnection cn, SqlTransaction tx, int facturaId)
+        {
+            using var cmd = new SqlCommand("dbo.FacturaCab_ActualizarSnapshotComprador", cn, tx);
+            cmd.CommandType = CommandType.StoredProcedure;
+            cmd.Parameters.Add("@FacturaId", SqlDbType.Int).Value = facturaId;
+            cmd.ExecuteNonQuery();
+        }
+
+        private List<(string Tipo, string Campo, string Mensaje)> ValidarParaEcf(SqlConnection cn, SqlTransaction tx, int facturaId)
+        {
+            var lista = new List<(string Tipo, string Campo, string Mensaje)>();
+
+            using var cmd = new SqlCommand("dbo.Factura_ValidarParaECF", cn, tx);
+            cmd.CommandType = CommandType.StoredProcedure;
+            cmd.Parameters.Add("@FacturaId", SqlDbType.Int).Value = facturaId;
+
+            using var rd = cmd.ExecuteReader();
+            while (rd.Read())
+            {
+                var tipo = rd["Tipo"] == DBNull.Value ? "" : Convert.ToString(rd["Tipo"]) ?? "";
+                var campo = rd["Campo"] == DBNull.Value ? "" : Convert.ToString(rd["Campo"]) ?? "";
+                var mensaje = rd["Mensaje"] == DBNull.Value ? "" : Convert.ToString(rd["Mensaje"]) ?? "";
+                lista.Add((tipo, campo, mensaje));
+            }
+
+            return lista;
+        }
+
+        private string GenerarXmlBaseEcf(SqlConnection cn, SqlTransaction tx, int facturaId)
+        {
+            using var cmd = new SqlCommand("dbo.Factura_ECF_GenerarXmlBase", cn, tx);
+            cmd.CommandType = CommandType.StoredProcedure;
+            cmd.Parameters.Add("@FacturaId", SqlDbType.Int).Value = facturaId;
+
+            var obj = cmd.ExecuteScalar();
+            return obj == null || obj == DBNull.Value ? string.Empty : Convert.ToString(obj) ?? string.Empty;
+        }
+
+        private (int TipoECFId, string CodigoTipoECF, string ENcf) ObtenerMetaEcf(SqlConnection cn, SqlTransaction tx, int facturaId)
+        {
+            using var cmd = new SqlCommand(@"
+SELECT TOP (1)
+    ISNULL(f.TipoECFId, 0) AS TipoECFId,
+    CASE ISNULL(f.TipoECFId, 0)
+        WHEN 1 THEN '31'
+        WHEN 2 THEN '32'
+        WHEN 3 THEN '33'
+        WHEN 4 THEN '34'
+        WHEN 5 THEN '41'
+        WHEN 6 THEN '43'
+        WHEN 7 THEN '44'
+        WHEN 8 THEN '45'
+        WHEN 9 THEN '46'
+        WHEN 10 THEN '47'
+        ELSE ''
+    END AS CodigoTipoECF,
+    ISNULL(f.eNCF, '') AS eNCF
+FROM dbo.FacturaCab f
+WHERE f.FacturaId = @FacturaId;", cn, tx);
+
+            cmd.Parameters.Add("@FacturaId", SqlDbType.Int).Value = facturaId;
+
+            using var rd = cmd.ExecuteReader();
+            if (!rd.Read())
+                throw new InvalidOperationException("No se pudo obtener metadata e-CF de la factura.");
+
+            return
+            (
+                rd.IsDBNull(0) ? 0 : Convert.ToInt32(rd.GetValue(0)),
+                rd.IsDBNull(1) ? "" : Convert.ToString(rd.GetValue(1)) ?? "",
+                rd.IsDBNull(2) ? "" : Convert.ToString(rd.GetValue(2)) ?? ""
+            );
+        }
+
+        private void GuardarXmlBaseEcf(SqlConnection cn, SqlTransaction tx, int facturaId, string xmlBase, string usuario = "SYSTEM")
+        {
+            if (string.IsNullOrWhiteSpace(xmlBase))
+                throw new InvalidOperationException("El XML base e-CF está vacío.");
+
+            var meta = ObtenerMetaEcf(cn, tx, facturaId);
+
+            using var cmd = new SqlCommand(@"
+IF EXISTS (SELECT 1 FROM dbo.ECFDocumentoFirmado WHERE FacturaId = @FacturaId)
+BEGIN
+    UPDATE dbo.ECFDocumentoFirmado
+       SET TipoECFId = @TipoECFId,
+           CodigoTipoECF = @CodigoTipoECF,
+           eNCF = @eNCF,
+           XmlBase = @XmlBase,
+           EstadoFirma = ISNULL(EstadoFirma, 'PENDIENTE'),
+           FechaActualizacion = SYSDATETIME(),
+           UsuarioActualizacion = @Usuario
+     WHERE FacturaId = @FacturaId;
+END
+ELSE
+BEGIN
+    INSERT INTO dbo.ECFDocumentoFirmado
+    (
+        FacturaId,
+        TipoECFId,
+        CodigoTipoECF,
+        eNCF,
+        XmlBase,
+        EstadoFirma,
+        IntentosFirma,
+        Activo,
+        FechaCreacion,
+        UsuarioCreacion
+    )
+    VALUES
+    (
+        @FacturaId,
+        @TipoECFId,
+        @CodigoTipoECF,
+        @eNCF,
+        @XmlBase,
+        'PENDIENTE',
+        0,
+        1,
+        SYSDATETIME(),
+        @Usuario
+    );
+END", cn, tx);
+
+            cmd.Parameters.Add("@FacturaId", SqlDbType.Int).Value = facturaId;
+            cmd.Parameters.Add("@TipoECFId", SqlDbType.Int).Value = meta.TipoECFId;
+            cmd.Parameters.Add("@CodigoTipoECF", SqlDbType.VarChar, 5).Value =
+                string.IsNullOrWhiteSpace(meta.CodigoTipoECF) ? (object)DBNull.Value : meta.CodigoTipoECF;
+            cmd.Parameters.Add("@eNCF", SqlDbType.VarChar, 50).Value =
+                string.IsNullOrWhiteSpace(meta.ENcf) ? (object)DBNull.Value : meta.ENcf;
+            cmd.Parameters.Add("@XmlBase", SqlDbType.Xml).Value = xmlBase;
+            cmd.Parameters.Add("@Usuario", SqlDbType.VarChar, 30).Value = usuario;
+            cmd.ExecuteNonQuery();
+        }
+
+        private void GuardarDocumentoEcf(SqlConnection cn, SqlTransaction tx, int facturaId, string xmlBase, string usuario = "SYSTEM")
+        {
+            if (string.IsNullOrWhiteSpace(xmlBase))
+                throw new InvalidOperationException("El XML base e-CF está vacío.");
+
+            var meta = ObtenerMetaEcf(cn, tx, facturaId);
+
+            using var cmd = new SqlCommand(@"
+IF EXISTS (SELECT 1 FROM dbo.ECFDocumento WHERE FacturaId = @FacturaId)
+BEGIN
+    UPDATE dbo.ECFDocumento
+       SET TipoECF = @TipoECFId,
+           ENCF = @eNCF,
+           XmlSinFirmar = @XmlBase,
+           EstadoDGII = ISNULL(NULLIF(EstadoDGII,''), 'PENDIENTE'),
+           EstadoProceso = ISNULL(NULLIF(EstadoProceso,''), 'PENDIENTE'),
+           FechaGenerado = ISNULL(FechaGenerado, SYSDATETIME()),
+           UltimoError = NULL
+     WHERE FacturaId = @FacturaId;
+END
+ELSE
+BEGIN
+    INSERT INTO dbo.ECFDocumento
+    (
+        FacturaId,
+        TipoECF,
+        ENCF,
+        EstadoDGII,
+        XmlSinFirmar,
+        FechaGenerado,
+        IntentosEnvio,
+        IntentosConsulta,
+        EstadoProceso,
+        Activo
+    )
+    VALUES
+    (
+        @FacturaId,
+        @TipoECFId,
+        @eNCF,
+        'PENDIENTE',
+        @XmlBase,
+        SYSDATETIME(),
+        0,
+        0,
+        'PENDIENTE',
+        1
+    );
+END", cn, tx);
+
+            cmd.Parameters.Add("@FacturaId", SqlDbType.Int).Value = facturaId;
+            cmd.Parameters.Add("@TipoECFId", SqlDbType.Int).Value = meta.TipoECFId;
+            cmd.Parameters.Add("@eNCF", SqlDbType.VarChar, 20).Value =
+                string.IsNullOrWhiteSpace(meta.ENcf) ? (object)DBNull.Value : meta.ENcf;
+            cmd.Parameters.Add("@XmlBase", SqlDbType.NVarChar, -1).Value = xmlBase;
+
+            cmd.ExecuteNonQuery();
+        }
+
+        private void ProcesarEcfPostGuardado(SqlConnection cn, SqlTransaction tx, int facturaId, bool procesarEcf, string usuario = "SYSTEM")
+        {
+            if (!procesarEcf) return;
+
+            EjecutarSnapshotComprador(cn, tx, facturaId);
+
+            var validaciones = ValidarParaEcf(cn, tx, facturaId);
+            var errores = validaciones
+                .Where(x => string.Equals(x.Tipo, "ERROR", StringComparison.OrdinalIgnoreCase))
+                .ToList();
+
+            if (errores.Count > 0)
+            {
+                var detalle = string.Join(Environment.NewLine, errores.Select(x => $"{x.Campo}: {x.Mensaje}"));
+                throw new InvalidOperationException("La factura no pasó validación e-CF:" + Environment.NewLine + detalle);
+            }
+
+            var xmlBase = GenerarXmlBaseEcf(cn, tx, facturaId);
+            GuardarXmlBaseEcf(cn, tx, facturaId, xmlBase, usuario);
+            GuardarDocumentoEcf(cn, tx, facturaId, xmlBase, usuario);
+        }
+
+        public void ProcesarEcfFactura(int facturaId, string usuario = "SYSTEM")
+        {
+            if (facturaId <= 0)
+                throw new ArgumentException("facturaId inválido.", nameof(facturaId));
+
+            using var cn = Db.GetOpenConnection();
+            using var tx = cn.BeginTransaction(IsolationLevel.ReadCommitted);
+
+            try
+            {
+                ProcesarEcfPostGuardado(cn, tx, facturaId, true, usuario);
+                tx.Commit();
+            }
+            catch
+            {
+                tx.Rollback();
+                throw;
+            }
+        }
     }
- }
+}
 

@@ -10,6 +10,8 @@ namespace Andloe.Data
 {
     public class ClienteRepository
     {
+        public const string CODIGO_CONSUMIDOR_FINAL = "C-000001";
+
         public List<Cliente> Listar(string? filtro = null, int top = 200)
         {
             var list = new List<Cliente>();
@@ -49,7 +51,7 @@ ORDER BY [FechaCreacion] DESC, [Código] DESC;", cn);
                     Email = rd.IsDBNull(4) ? null : rd.GetString(4),
                     Direccion = rd.IsDBNull(5) ? null : rd.GetString(5),
 
-                    Tipo = rd.IsDBNull(6) ? (byte)0 : rd.GetByte(6),
+                    Tipo = rd.IsDBNull(7) ? (byte)0 : rd.GetByte(7),
                     Estado = rd.IsDBNull(7) ? (byte)1 : rd.GetByte(7),
                     FechaCreacion = rd.IsDBNull(8) ? (DateTime?)null : rd.GetDateTime(8),
 
@@ -66,7 +68,6 @@ ORDER BY [FechaCreacion] DESC, [Código] DESC;", cn);
             return list;
         }
 
-        // ✅ MEJORADO: devuelve ClienteId también
         public ClienteDto? BuscarPorCodigoORnc(string valor)
         {
             if (string.IsNullOrWhiteSpace(valor)) return null;
@@ -77,6 +78,7 @@ SELECT TOP(1)
        c.ClienteId,
        c.[Código]      AS Codigo,
        c.[Nombre],
+       c.CodVendedor,
        c.[RNC_Cedula],
        c.[Direccion],
        c.[Telefono],
@@ -95,17 +97,46 @@ WHERE c.[RNC_Cedula] = @v
                 ClienteId = rd.IsDBNull(0) ? 0 : rd.GetInt32(0),
                 Codigo = rd.IsDBNull(1) ? "" : rd.GetString(1),
                 Nombre = rd.IsDBNull(2) ? "" : rd.GetString(2),
-                RncCedula = rd.IsDBNull(3) ? null : rd.GetString(3),
-                Direccion = rd.IsDBNull(4) ? null : rd.GetString(4),
-                Telefono = rd.IsDBNull(5) ? null : rd.GetString(5),
-                Tipo = rd.IsDBNull(6) ? (byte)0 : rd.GetByte(6)
+                CodVendedor = rd.IsDBNull(3) ? null : rd.GetString(3),
+                RncCedula = rd.IsDBNull(4) ? null : rd.GetString(4),
+                Direccion = rd.IsDBNull(5) ? null : rd.GetString(5),
+                Telefono = rd.IsDBNull(6) ? null : rd.GetString(6),
+                Tipo = rd.IsDBNull(7) ? (byte)0 : rd.GetByte(7)
             };
         }
 
-        // ✅ CREA CLIENTE desde DGII (solo datos necesarios) y devuelve ClienteId
-        // - NO depende de DgiiRncEntry
-        // - Limpia acentos y "�"
-        // - Evita duplicar si ya existe RNC
+        public ClienteDto ObtenerConsumidorFinal()
+        {
+            var cli = BuscarPorCodigoORnc(CODIGO_CONSUMIDOR_FINAL);
+
+            if (cli == null || cli.ClienteId <= 0)
+                throw new Exception(
+                    $"No existe el cliente por defecto '{CODIGO_CONSUMIDOR_FINAL}'. " +
+                    $"Crea dbo.Cliente con Código='{CODIGO_CONSUMIDOR_FINAL}'."
+                );
+
+            return cli;
+        }
+
+        public void ValidarConsumidorFinal_ErpPro()
+        {
+            using var cn = Db.GetOpenConnection();
+            using var cmd = new SqlCommand(@"
+SELECT TOP(1) ClienteId, [Código], [Nombre], [Estado]
+FROM dbo.Cliente
+WHERE [Código] = @cod;", cn);
+
+            cmd.Parameters.Add("@cod", SqlDbType.VarChar, 20).Value = CODIGO_CONSUMIDOR_FINAL;
+
+            using var rd = cmd.ExecuteReader();
+            if (!rd.Read())
+                throw new Exception($"ERP PRO: Falta cliente Consumidor Final. Crea Código='{CODIGO_CONSUMIDOR_FINAL}'.");
+
+            var estado = rd.IsDBNull(3) ? (byte)1 : rd.GetByte(3);
+            if (estado == 0)
+                throw new Exception($"ERP PRO: Cliente '{CODIGO_CONSUMIDOR_FINAL}' está INACTIVO (Estado=0). Actívalo.");
+        }
+
         public int CrearDesdeDgii(string rnc, string nombre, string? nombreComercial, string usuario)
         {
             rnc = LimpiarDocumento(rnc) ?? "";
@@ -116,13 +147,11 @@ WHERE c.[RNC_Cedula] = @v
             if (string.IsNullOrWhiteSpace(nombreFinal))
                 nombreFinal = "CLIENTE";
 
-            // Serializable = evita que 2 usuarios creen el mismo cliente al mismo tiempo
             using var cn = Db.GetOpenConnection();
             using var tx = cn.BeginTransaction(IsolationLevel.Serializable);
 
             try
             {
-                // 1) Si ya existe por RNC, devolverlo
                 var existeId = GetClienteIdPorRnc(cn, tx, rnc);
                 if (existeId > 0)
                 {
@@ -130,7 +159,6 @@ WHERE c.[RNC_Cedula] = @v
                     return existeId;
                 }
 
-                // 2) Crear cliente con numerador (SP genera el siguiente Código)
                 var codigoGenerado = CrearAutoTx(
                     cn, tx,
                     nombre: (nombreFinal.Length > 120 ? nombreFinal[..120] : nombreFinal),
@@ -145,7 +173,6 @@ WHERE c.[RNC_Cedula] = @v
                     codAlmacen: null
                 );
 
-                // 3) Asegurar valores mínimos y devolver ClienteId
                 using var cmd = new SqlCommand(@"
 UPDATE dbo.Cliente
 SET [Nombre] = @nom,
@@ -180,7 +207,6 @@ WHERE [Código] = @cod;", cn, tx);
                 throw;
             }
         }
-
 
         private static int GetClienteIdPorRnc(SqlConnection cn, SqlTransaction tx, string rnc)
         {
@@ -413,9 +439,6 @@ ORDER BY v.Fecha;", cn);
             return dt;
         }
 
-        // =========================
-        // Limpieza (sin acentos / sin � / doc solo numeros)
-        // =========================
         private static string? LimpiarTexto(string? s)
         {
             if (string.IsNullOrWhiteSpace(s)) return null;
@@ -458,7 +481,8 @@ WHERE c.[RNC_Cedula] = @v;", cn);
                 ClienteId = rd.IsDBNull(0) ? 0 : rd.GetInt32(0),
                 Codigo = rd.IsDBNull(1) ? "" : rd.GetString(1),
                 Nombre = rd.IsDBNull(2) ? "" : rd.GetString(2),
-                RncCedula = rd.IsDBNull(3) ? null : rd.GetString(3),
+                CodVendedor = rd.IsDBNull(3) ? null : rd.GetString(3),
+                RncCedula = rd.IsDBNull(4) ? null : rd.GetString(4),
             };
         }
 
