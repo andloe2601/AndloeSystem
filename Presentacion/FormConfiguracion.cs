@@ -47,6 +47,8 @@ namespace Andloe.Presentacion
             btnCerrar.Click += btnCerrar_Click;
             btnActualizarDgii.Click += btnActualizarDgii_Click;
             btnProbarAlanube.Click += btnProbarAlanube_Click;
+            btnCrearEmpresaAlanube.Click += btnCrearEmpresaAlanube_Click;
+            btnEmpresas.Click += btnEmpresas_Click;
         }
 
         private void HookNumerador(TextBox txtPrefijo, TextBox txtLongitud, TextBox txtActual)
@@ -79,6 +81,13 @@ namespace Andloe.Presentacion
             {
                 _loading = false;
             }
+        }
+
+        private void btnEmpresas_Click(object? sender, EventArgs e)
+        {
+            using var frm = new FormEmpresaCrud();
+            frm.ShowDialog(this);
+            CargarEmpresas();
         }
 
         private void CargarComboAlanubeAmbiente()
@@ -496,6 +505,45 @@ END;", cn, tx))
                 tx.Rollback();
                 throw;
             }
+        }
+
+        private static string Nz(object? value)
+        {
+            return value == null || value == DBNull.Value
+                ? ""
+                : Convert.ToString(value)?.Trim() ?? "";
+        }
+
+        private DataRow? ObtenerEmpresaParaAlanube(int empresaId)
+        {
+            using var cn = Db.GetOpenConnection();
+            using var cmd = new SqlCommand(@"
+SELECT TOP (1)
+    e.EmpresaId,
+    e.RazonSocial,
+    e.RNC,
+    e.Pais,
+    e.Provincia,
+    e.Ciudad,
+    e.Direccion,
+    e.Telefono,
+    e.Email,
+    e.MunicipioId,
+    m.Nombre AS MunicipioNombre,
+    p.Nombre AS ProvinciaNombre
+FROM dbo.Empresa e
+LEFT JOIN dbo.Municipio m
+    ON m.MunicipioId = e.MunicipioId
+LEFT JOIN dbo.Provincia p
+    ON p.ProvinciaId = m.ProvinciaId
+WHERE e.EmpresaId = @EmpresaId;", cn);
+
+            cmd.Parameters.Add("@EmpresaId", SqlDbType.Int).Value = empresaId;
+
+            var dt = new DataTable();
+            dt.Load(cmd.ExecuteReader());
+
+            return dt.Rows.Count == 0 ? null : dt.Rows[0];
         }
 
         private static string GetLocalIp()
@@ -956,9 +1004,149 @@ END;", cn);
             myForm.ShowDialog();
             this.Close();
         }
-    }
+    
 
-    internal sealed class AlanubeSetTestsRequestDto
+
+private async void btnCrearEmpresaAlanube_Click(object? sender, EventArgs e)
+        {
+            try
+            {
+                var baseUrl = (txtAlanubeBaseUrl.Text ?? "").Trim().TrimEnd('/');
+                var token = LimpiarTokenAlanube(txtAlanubeToken.Text);
+
+                if (string.IsNullOrWhiteSpace(baseUrl))
+                    throw new Exception("Debes indicar la Base URL de Alanube.");
+
+                if (string.IsNullOrWhiteSpace(token))
+                    throw new Exception("Debes indicar el token de Alanube.");
+
+                if (token.Length < 100)
+                    throw new Exception("El token de Alanube parece inválido o truncado.");
+
+                if (cbEmpresa.SelectedValue == null || !int.TryParse(cbEmpresa.SelectedValue.ToString(), out var empresaId) || empresaId <= 0)
+                    throw new Exception("Debes seleccionar una empresa válida.");
+
+                var row = ObtenerEmpresaParaAlanube(empresaId);
+                if (row == null)
+                    throw new Exception("No se encontró la empresa seleccionada.");
+
+                var razonSocial = Nz(row["RazonSocial"]);
+                var rnc = Nz(row["RNC"]);
+                var direccion = Nz(row["Direccion"]);
+
+                // Fuente oficial nueva si MunicipioId está relacionado
+                var provincia = Nz(row["ProvinciaNombre"]);
+                var municipio = Nz(row["MunicipioNombre"]);
+
+                // Fallback legacy
+                if (string.IsNullOrWhiteSpace(provincia))
+                    provincia = Nz(row["Provincia"]);
+
+                if (string.IsNullOrWhiteSpace(municipio))
+                    municipio = Nz(row["Ciudad"]);
+
+                if (string.IsNullOrWhiteSpace(razonSocial))
+                    throw new Exception("La empresa no tiene Razón Social.");
+
+                if (string.IsNullOrWhiteSpace(rnc))
+                    throw new Exception("La empresa no tiene RNC.");
+
+                if (string.IsNullOrWhiteSpace(direccion))
+                    throw new Exception("La empresa no tiene Dirección.");
+
+                if (string.IsNullOrWhiteSpace(provincia))
+                    throw new Exception("La empresa no tiene provincia. Debes relacionarla al catálogo.");
+
+                if (string.IsNullOrWhiteSpace(municipio))
+                    throw new Exception("La empresa no tiene municipio. Debes relacionarla al catálogo.");
+
+                var req = new AlanubeCreateCompanyRequestDto
+                {
+                    Name = razonSocial,
+                    TradeName = razonSocial,
+                    Identification = rnc,
+                    Address = direccion,
+                    Province = provincia,
+                    Municipality = municipio
+                };
+
+                var json = JsonSerializer.Serialize(req, new JsonSerializerOptions
+                {
+                    PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+                    WriteIndented = true
+                });
+
+                btnCrearEmpresaAlanube.Enabled = false;
+                Cursor = Cursors.WaitCursor;
+
+                using var http = new HttpClient();
+                http.Timeout = TimeSpan.FromSeconds(
+                    int.TryParse((txtAlanubeTimeout.Text ?? "").Trim(), out var timeoutSeg) && timeoutSeg > 0
+                        ? timeoutSeg
+                        : 60);
+
+                http.DefaultRequestHeaders.Clear();
+                http.DefaultRequestHeaders.Accept.Clear();
+                http.DefaultRequestHeaders.Accept.Add(
+                    new System.Net.Http.Headers.MediaTypeWithQualityHeaderValue("application/json"));
+                http.DefaultRequestHeaders.Authorization =
+                    new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
+
+                var url = $"{baseUrl}/company";
+                using var content = new StringContent(json, Encoding.UTF8, "application/json");
+
+                var response = await http.PostAsync(url, content);
+                var raw = await response.Content.ReadAsStringAsync();
+
+                if (!response.IsSuccessStatusCode)
+                {
+                    throw new Exception(
+                        "Alanube devolvió un error creando la empresa." + Environment.NewLine + Environment.NewLine +
+                        $"HTTP: {(int)response.StatusCode} - {response.ReasonPhrase}" + Environment.NewLine +
+                        $"URL: {url}" + Environment.NewLine + Environment.NewLine +
+                        "REQUEST JSON:" + Environment.NewLine + json + Environment.NewLine + Environment.NewLine +
+                        "RESPONSE:" + Environment.NewLine + raw);
+                }
+
+                var parsed = JsonSerializer.Deserialize<AlanubeCompanyCreateResponseDto>(
+                    raw,
+                    new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+
+                if (!string.IsNullOrWhiteSpace(parsed?.Id))
+                {
+                    txtAlanubeIdCompany.Text = parsed.Id;
+                }
+
+                MessageBox.Show(
+                    "Empresa creada correctamente en Alanube." + Environment.NewLine + Environment.NewLine +
+                    $"Id: {parsed?.Id ?? ""}" + Environment.NewLine +
+                    $"Name: {parsed?.Name ?? ""}" + Environment.NewLine +
+                    $"TradeName: {parsed?.TradeName ?? ""}" + Environment.NewLine +
+                    $"Identification: {parsed?.Identification ?? ""}" + Environment.NewLine +
+                    $"Province: {parsed?.Province ?? ""}" + Environment.NewLine +
+                    $"Municipality: {parsed?.Municipality ?? ""}",
+                    "Alanube Sandbox",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Information);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(
+                    ex.ToString(),
+                    "Alanube Sandbox",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Error);
+            }
+            finally
+            {
+                Cursor = Cursors.Default;
+                btnCrearEmpresaAlanube.Enabled = true;
+            }
+        }
+    }
+}
+
+internal sealed class AlanubeSetTestsRequestDto
     {
         public string IdCompany { get; set; } = "";
         public int RetryNumber { get; set; } = 1;
@@ -983,5 +1171,29 @@ END;", cn);
         public string? CreationDate { get; set; }
     }
 
+    internal sealed class AlanubeCreateCompanyRequestDto
+    {
+        public string Name { get; set; } = "";
+        public string TradeName { get; set; } = "";
+        public string Identification { get; set; } = "";
+        public string Address { get; set; } = "";
+        public string Province { get; set; } = "";
+        public string Municipality { get; set; } = "";
+    }
+
+    internal sealed class AlanubeCompanyCreateResponseDto
+    {
+        public string? Id { get; set; }
+        public string? Name { get; set; }
+        public string? TradeName { get; set; }
+        public string? Identification { get; set; }
+        public string? Address { get; set; }
+        public string? Province { get; set; }
+        public string? Municipality { get; set; }
+        public string? Type { get; set; }
 }
+
+
+
+
 #nullable restore

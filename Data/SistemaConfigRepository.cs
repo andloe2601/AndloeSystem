@@ -90,7 +90,8 @@ WHEN NOT MATCHED THEN
     VALUES (@Clave, @Valor, @Descripcion, @Tipo, SYSDATETIME(), @Usuario);", cn);
 
             cmd.Parameters.Add("@Clave", SqlDbType.VarChar, 200).Value = (clave ?? "").Trim();
-            cmd.Parameters.Add("@Valor", SqlDbType.VarChar, 200).Value = (object?)valor ?? DBNull.Value;
+            cmd.Parameters.Add("@Valor", SqlDbType.NVarChar, -1).Value =
+    (object?)valor ?? DBNull.Value;
             cmd.Parameters.Add("@Descripcion", SqlDbType.VarChar, 200).Value = (object?)descripcion ?? DBNull.Value;
             cmd.Parameters.Add("@Tipo", SqlDbType.VarChar, 50).Value = (object?)tipo ?? DBNull.Value;
             cmd.Parameters.Add("@Usuario", SqlDbType.VarChar, 50).Value = string.IsNullOrWhiteSpace(usuario) ? "SYSTEM" : usuario.Trim();

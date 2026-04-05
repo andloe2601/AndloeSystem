@@ -108,6 +108,8 @@ namespace Andloe.Presentacion
         private Label lblAlanubeRetryNumber;
         private TextBox txtAlanubeRetryNumber;
         private Button btnProbarAlanube;
+        private Button btnCrearEmpresaAlanube;
+        private Button btnEmpresas;
 
         protected override void Dispose(bool disposing)
         {
@@ -490,6 +492,23 @@ namespace Andloe.Presentacion
             btnProbarAlanube.TabIndex = 206;
             btnProbarAlanube.Text = "Probar Alanube";
             btnProbarAlanube.UseVisualStyleBackColor = true;
+
+            btnCrearEmpresaAlanube = new Button();
+
+            btnCrearEmpresaAlanube.Location = new Point(700, 590);
+            btnCrearEmpresaAlanube.Name = "btnCrearEmpresaAlanube";
+            btnCrearEmpresaAlanube.Size = new Size(120, 27);
+            btnCrearEmpresaAlanube.TabIndex = 207;
+            btnCrearEmpresaAlanube.Text = "Crear Empresa";
+            btnCrearEmpresaAlanube.UseVisualStyleBackColor = true;
+
+            btnEmpresas = new Button();
+            btnEmpresas.Location = new Point(720, 302);
+            btnEmpresas.Name = "btnEmpresas";
+            btnEmpresas.Size = new Size(120, 53);
+            btnEmpresas.TabIndex = 20;
+            btnEmpresas.Text = "Empresas";
+            btnEmpresas.UseVisualStyleBackColor = true;
 
             // 
             // btnActualizarDgii
@@ -960,6 +979,8 @@ namespace Andloe.Presentacion
             tpGeneral.Controls.Add(lblAlanubeRetryNumber);
             tpGeneral.Controls.Add(txtAlanubeRetryNumber);
             tpGeneral.Controls.Add(btnProbarAlanube);
+            tpGeneral.Controls.Add(btnCrearEmpresaAlanube);
+            tpGeneral.Controls.Add(btnEmpresas);
             tpNumeradores.ResumeLayout(false);
             tpNumeradores.PerformLayout();
             ResumeLayout(false);
