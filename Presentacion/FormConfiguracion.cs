@@ -302,10 +302,7 @@ ORDER BY Codigo, Nombre;", cn);
             }
 
             var alanubeBaseUrl = _cfgRepo.GetValor("ALANUBE_BASE_URL") ?? "";
-            var alanubeToken = (_cfgRepo.GetValor("ALANUBE_TOKEN") ?? "").Trim();
-
-            if (alanubeToken.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
-                alanubeToken = alanubeToken.Substring(7).Trim();
+            var alanubeToken = LimpiarTokenAlanube(_cfgRepo.GetValor("ALANUBE_TOKEN"));
             var alanubeAmbiente = (_cfgRepo.GetValor("ALANUBE_AMBIENTE") ?? "sandbox").Trim().ToLowerInvariant();
             var alanubeTimeout = _cfgRepo.GetValor("ALANUBE_TIMEOUT_SEGUNDOS") ?? "60";
             var alanubeIdCompany = _cfgRepo.GetValor("ALANUBE_ID_COMPANY") ?? "";
@@ -349,10 +346,7 @@ ORDER BY Codigo, Nombre;", cn);
             var almDes = cbAlmacenDestinoPos.SelectedValue?.ToString() ?? "0";
 
             var alanubeBaseUrl = (txtAlanubeBaseUrl.Text ?? "").Trim();
-            var alanubeToken = (txtAlanubeToken.Text ?? "").Trim();
-
-            if (alanubeToken.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
-                alanubeToken = alanubeToken.Substring(7).Trim();
+            var alanubeToken = LimpiarTokenAlanube(txtAlanubeToken.Text);
 
             var alanubeAmbiente = "sandbox";
             if (cbAlanubeAmbiente.Items.Count > 0 && cbAlanubeAmbiente.SelectedItem != null)
@@ -830,85 +824,54 @@ END;", cn);
             try
             {
                 var baseUrl = (txtAlanubeBaseUrl.Text ?? "").Trim().TrimEnd('/');
-                var token = (txtAlanubeToken.Text ?? "").Trim();
+                var token = LimpiarTokenAlanube(txtAlanubeToken.Text);
+                var idCompany = (txtAlanubeIdCompany.Text ?? "").Trim();
 
                 if (token.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
                     token = token.Substring(7).Trim();
-                var idCompany = (txtAlanubeIdCompany.Text ?? "").Trim();
-                var retryTxt = (txtAlanubeRetryNumber.Text ?? "").Trim();
 
                 if (string.IsNullOrWhiteSpace(baseUrl))
                     throw new Exception("Debes indicar la Base URL de Alanube.");
 
-                if (!Uri.TryCreate(baseUrl, UriKind.Absolute, out _))
-                    throw new Exception("La Base URL de Alanube no es válida.");
-
                 if (string.IsNullOrWhiteSpace(token))
-                    throw new Exception("Debes indicar el Bearer Token de Alanube.");
+                    throw new Exception("Debes indicar el token de Alanube.");
 
                 if (string.IsNullOrWhiteSpace(idCompany))
                     throw new Exception("Debes indicar el Id Company de Alanube.");
 
-                if (!int.TryParse(string.IsNullOrWhiteSpace(retryTxt) ? "1" : retryTxt, out var retryNumber) || retryNumber <= 0)
-                    throw new Exception("Retry Number debe ser un entero mayor que 0.");
-
                 btnProbarAlanube.Enabled = false;
                 Cursor = Cursors.WaitCursor;
 
-                var req = new AlanubeSetTestsRequestDto
-                {
-                    IdCompany = idCompany,
-                    RetryNumber = retryNumber,
-                    ItemExample = new AlanubeSetTestsItemDto
-                    {
-                        BillingIndicator = 1,
-                        GoodServiceIndicator = 1,
-                        ItemName = "caja de madera",
-                        ItemDescription = "Fabricado con madera de arce canadience",
-                        UnitPriceItem = 250m
-                    }
-                };
-
-                var json = JsonSerializer.Serialize(req, new JsonSerializerOptions
-                {
-                    PropertyNamingPolicy = JsonNamingPolicy.CamelCase
-                });
-
-                using var http = new HttpClient
-                {
-                    Timeout = TimeSpan.FromSeconds(
-                        int.TryParse((txtAlanubeTimeout.Text ?? "").Trim(), out var timeoutSeg) && timeoutSeg > 0
-                            ? timeoutSeg
-                            : 60)
-                };
+                using var http = new HttpClient();
+                http.Timeout = TimeSpan.FromSeconds(
+                    int.TryParse((txtAlanubeTimeout.Text ?? "").Trim(), out var timeoutSeg) && timeoutSeg > 0
+                        ? timeoutSeg
+                        : 60);
 
                 http.DefaultRequestHeaders.Clear();
-                http.DefaultRequestHeaders.Add("accept", "application/json");
-                http.DefaultRequestHeaders.Add("authorization", "Bearer " + token);
+                http.DefaultRequestHeaders.Accept.Clear();
+                http.DefaultRequestHeaders.Accept.Add(
+                    new System.Net.Http.Headers.MediaTypeWithQualityHeaderValue("application/json"));
+                http.DefaultRequestHeaders.Authorization =
+                    new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
 
-                var url = baseUrl + "/set-tests";
-                using var content = new StringContent(json, Encoding.UTF8, "application/json");
+                var url = $"{baseUrl}/company/{idCompany}";
 
-                var response = await http.PostAsync(url, content);
+                using var req = new HttpRequestMessage(HttpMethod.Get, url);
+                var response = await http.SendAsync(req);
                 var raw = await response.Content.ReadAsStringAsync();
 
                 if (!response.IsSuccessStatusCode)
-                    throw new Exception($"Alanube devolvió {(int)response.StatusCode}: {raw}");
-
-                var parsed = JsonSerializer.Deserialize<AlanubeSetTestsResponseDto>(
-                    raw,
-                    new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
-
-                var mensaje =
-                    "Prueba Alanube ejecutada correctamente." + Environment.NewLine + Environment.NewLine +
-                    $"Id: {parsed?.Id ?? ""}" + Environment.NewLine +
-                    $"Status: {parsed?.Status ?? ""}" + Environment.NewLine +
-                    $"IdCompany: {parsed?.IdCompany ?? ""}" + Environment.NewLine +
-                    $"CompanyIdentification: {parsed?.CompanyIdentification ?? ""}" + Environment.NewLine +
-                    $"CreationDate: {parsed?.CreationDate ?? ""}";
+                {
+                    throw new Exception(
+                        "Alanube devolvió un error." + Environment.NewLine + Environment.NewLine +
+                        $"HTTP: {(int)response.StatusCode} - {response.ReasonPhrase}" + Environment.NewLine +
+                        $"URL: {url}" + Environment.NewLine + Environment.NewLine +
+                        $"RESPONSE: {raw}");
+                }
 
                 MessageBox.Show(
-                    mensaje,
+                    "Conexión y autenticación correctas con Alanube." + Environment.NewLine + Environment.NewLine + raw,
                     "Alanube Sandbox",
                     MessageBoxButtons.OK,
                     MessageBoxIcon.Information);
@@ -916,7 +879,7 @@ END;", cn);
             catch (Exception ex)
             {
                 MessageBox.Show(
-                    "Error probando Alanube: " + ex.Message,
+                    ex.ToString(),
                     "Alanube Sandbox",
                     MessageBoxButtons.OK,
                     MessageBoxIcon.Error);
@@ -926,8 +889,9 @@ END;", cn);
                 Cursor = Cursors.Default;
                 btnProbarAlanube.Enabled = true;
             }
-        }
 
+
+        }
 
         private void btnGuardar_Click(object? sender, EventArgs e)
         {
@@ -973,6 +937,16 @@ END;", cn);
             {
                 MessageBox.Show(ex.Message, "DGII ERROR", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
+        }
+
+        private static string LimpiarTokenAlanube(string? token)
+        {
+            token = (token ?? "").Trim();
+
+            if (token.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
+                token = token.Substring(7).Trim();
+
+            return token;
         }
 
         private void BtnPostulacion_Click(object sender, EventArgs e)
