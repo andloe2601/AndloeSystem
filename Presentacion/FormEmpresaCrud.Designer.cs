@@ -1,4 +1,5 @@
-﻿using System.Drawing;
+﻿#nullable disable
+using System.Drawing;
 using System.Windows.Forms;
 
 namespace Andloe.Presentacion
@@ -41,7 +42,9 @@ namespace Andloe.Presentacion
 
         protected override void Dispose(bool disposing)
         {
-            if (disposing && (components != null)) components.Dispose();
+            if (disposing && (components != null))
+                components.Dispose();
+
             base.Dispose(disposing);
         }
 
@@ -83,141 +86,235 @@ namespace Andloe.Presentacion
             ((System.ComponentModel.ISupportInitialize)picLogo).BeginInit();
             SuspendLayout();
 
-            dgvEmpresas.Location = new Point(12, 12);
-            dgvEmpresas.Size = new Size(520, 520);
-            dgvEmpresas.SelectionMode = DataGridViewSelectionMode.FullRowSelect;
-            dgvEmpresas.MultiSelect = false;
-            dgvEmpresas.ReadOnly = true;
+            // dgvEmpresas
             dgvEmpresas.AllowUserToAddRows = false;
             dgvEmpresas.AllowUserToDeleteRows = false;
+            dgvEmpresas.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left;
             dgvEmpresas.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill;
+            dgvEmpresas.ColumnHeadersHeightSizeMode = DataGridViewColumnHeadersHeightSizeMode.AutoSize;
+            dgvEmpresas.Location = new Point(12, 12);
+            dgvEmpresas.MultiSelect = false;
+            dgvEmpresas.Name = "dgvEmpresas";
+            dgvEmpresas.ReadOnly = true;
             dgvEmpresas.RowHeadersVisible = false;
-            dgvEmpresas.Columns.Add(new DataGridViewTextBoxColumn { Name = "colEmpresaId", DataPropertyName = "EmpresaId", HeaderText = "Id", Width = 60 });
-            dgvEmpresas.Columns.Add(new DataGridViewTextBoxColumn { Name = "colRazonSocial", DataPropertyName = "RazonSocial", HeaderText = "Razón Social" });
-            dgvEmpresas.Columns.Add(new DataGridViewTextBoxColumn { Name = "colRNC", DataPropertyName = "RNC", HeaderText = "RNC" });
-            dgvEmpresas.Columns.Add(new DataGridViewTextBoxColumn { Name = "colEstado", DataPropertyName = "Estado", HeaderText = "Estado", Width = 80 });
+            dgvEmpresas.SelectionMode = DataGridViewSelectionMode.FullRowSelect;
+            dgvEmpresas.Size = new Size(520, 526);
+            dgvEmpresas.TabIndex = 0;
 
-            int x1 = 560, y = 20, w = 300, h = 23, gap = 34;
+            dgvEmpresas.Columns.Add(new DataGridViewTextBoxColumn
+            {
+                Name = "colEmpresaId",
+                DataPropertyName = "EmpresaId",
+                HeaderText = "Id",
+                Width = 60
+            });
 
+            dgvEmpresas.Columns.Add(new DataGridViewTextBoxColumn
+            {
+                Name = "colRazonSocial",
+                DataPropertyName = "RazonSocial",
+                HeaderText = "Razón Social"
+            });
+
+            dgvEmpresas.Columns.Add(new DataGridViewTextBoxColumn
+            {
+                Name = "colRNC",
+                DataPropertyName = "RNC",
+                HeaderText = "RNC"
+            });
+
+            dgvEmpresas.Columns.Add(new DataGridViewTextBoxColumn
+            {
+                Name = "colEstado",
+                DataPropertyName = "Estado",
+                HeaderText = "Estado",
+                Width = 80
+            });
+
+            int x = 555;
+            int y = 18;
+            int labelW = 95;
+            int txtX = x + 105;
+            int w = 250;
+            int h = 23;
+            int gap = 34;
+
+            // lblEmpresaId
+            lblEmpresaId.AutoSize = true;
+            lblEmpresaId.Location = new Point(x, y + 3);
+            lblEmpresaId.Name = "lblEmpresaId";
+            lblEmpresaId.Size = new Size(20, 15);
             lblEmpresaId.Text = "Id:";
-            lblEmpresaId.Location = new Point(x1, y);
-            txtEmpresaId.Location = new Point(x1 + 110, y - 3);
-            txtEmpresaId.Size = new Size(80, h);
+
+            txtEmpresaId.Location = new Point(txtX, y);
+            txtEmpresaId.Name = "txtEmpresaId";
             txtEmpresaId.ReadOnly = true;
+            txtEmpresaId.Size = new Size(80, h);
 
             y += gap;
+
+            lblRazonSocial.AutoSize = true;
+            lblRazonSocial.Location = new Point(x, y + 3);
             lblRazonSocial.Text = "Razón Social:";
-            lblRazonSocial.Location = new Point(x1, y);
-            txtRazonSocial.Location = new Point(x1 + 110, y - 3);
+            txtRazonSocial.Location = new Point(txtX, y);
             txtRazonSocial.Size = new Size(w, h);
 
             y += gap;
+
+            lblRNC.AutoSize = true;
+            lblRNC.Location = new Point(x, y + 3);
             lblRNC.Text = "RNC:";
-            lblRNC.Location = new Point(x1, y);
-            txtRNC.Location = new Point(x1 + 110, y - 3);
-            txtRNC.Size = new Size(180, h);
+            txtRNC.Location = new Point(txtX, y);
+            txtRNC.Size = new Size(160, h);
 
             y += gap;
+
+            lblMonedaBase.AutoSize = true;
+            lblMonedaBase.Location = new Point(x, y + 3);
             lblMonedaBase.Text = "Moneda:";
-            lblMonedaBase.Location = new Point(x1, y);
-            txtMonedaBase.Location = new Point(x1 + 110, y - 3);
-            txtMonedaBase.Size = new Size(80, h);
+            txtMonedaBase.Location = new Point(txtX, y);
+            txtMonedaBase.Size = new Size(70, h);
 
             y += gap;
+
+            lblPais.AutoSize = true;
+            lblPais.Location = new Point(x, y + 3);
             lblPais.Text = "País:";
-            lblPais.Location = new Point(x1, y);
-            txtPais.Location = new Point(x1 + 110, y - 3);
-            txtPais.Size = new Size(80, h);
+            txtPais.Location = new Point(txtX, y);
+            txtPais.Size = new Size(70, h);
 
             y += gap;
+
+            lblProvincia.AutoSize = true;
+            lblProvincia.Location = new Point(x, y + 3);
             lblProvincia.Text = "Provincia:";
-            lblProvincia.Location = new Point(x1, y);
-            cbProvincia.Location = new Point(x1 + 110, y - 3);
-            cbProvincia.Size = new Size(w, h);
             cbProvincia.DropDownStyle = ComboBoxStyle.DropDownList;
+            cbProvincia.Location = new Point(txtX, y);
+            cbProvincia.Size = new Size(w, h);
 
             y += gap;
+
+            lblMunicipio.AutoSize = true;
+            lblMunicipio.Location = new Point(x, y + 3);
             lblMunicipio.Text = "Municipio:";
-            lblMunicipio.Location = new Point(x1, y);
-            cbMunicipio.Location = new Point(x1 + 110, y - 3);
-            cbMunicipio.Size = new Size(w, h);
             cbMunicipio.DropDownStyle = ComboBoxStyle.DropDownList;
+            cbMunicipio.Location = new Point(txtX, y);
+            cbMunicipio.Size = new Size(w, h);
 
             y += gap;
+
+            lblDireccion.AutoSize = true;
+            lblDireccion.Location = new Point(x, y + 3);
             lblDireccion.Text = "Dirección:";
-            lblDireccion.Location = new Point(x1, y);
-            txtDireccion.Location = new Point(x1 + 110, y - 3);
-            txtDireccion.Size = new Size(w, h);
+            txtDireccion.Location = new Point(txtX, y);
+            txtDireccion.Size = new Size(320, h);
 
             y += gap;
+
+            lblTelefono.AutoSize = true;
+            lblTelefono.Location = new Point(x, y + 3);
             lblTelefono.Text = "Teléfono:";
-            lblTelefono.Location = new Point(x1, y);
-            txtTelefono.Location = new Point(x1 + 110, y - 3);
+            txtTelefono.Location = new Point(txtX, y);
             txtTelefono.Size = new Size(180, h);
 
             y += gap;
+
+            lblEmail.AutoSize = true;
+            lblEmail.Location = new Point(x, y + 3);
             lblEmail.Text = "Email:";
-            lblEmail.Location = new Point(x1, y);
-            txtEmail.Location = new Point(x1 + 110, y - 3);
-            txtEmail.Size = new Size(w, h);
+            txtEmail.Location = new Point(txtX, y);
+            txtEmail.Size = new Size(320, h);
 
             y += gap;
+
+            chkEstado.AutoSize = true;
+            chkEstado.Location = new Point(txtX, y + 3);
             chkEstado.Text = "Activo";
-            chkEstado.Location = new Point(x1 + 110, y - 2);
 
             y += gap;
+
+            lblLogo.AutoSize = true;
+            lblLogo.Location = new Point(x, y + 3);
             lblLogo.Text = "Logo:";
-            lblLogo.Location = new Point(x1, y);
-            picLogo.Location = new Point(x1 + 110, y);
-            picLogo.Size = new Size(180, 120);
+
             picLogo.BorderStyle = BorderStyle.FixedSingle;
+            picLogo.Location = new Point(txtX, y);
+            picLogo.Name = "picLogo";
+            picLogo.Size = new Size(180, 120);
             picLogo.SizeMode = PictureBoxSizeMode.Zoom;
 
+            btnCargarLogo.Location = new Point(txtX + 190, y);
+            btnCargarLogo.Name = "btnCargarLogo";
+            btnCargarLogo.Size = new Size(90, 30);
             btnCargarLogo.Text = "Cargar";
-            btnCargarLogo.Location = new Point(x1 + 300, y);
-            btnCargarLogo.Size = new Size(80, 28);
 
+            btnQuitarLogo.Location = new Point(txtX + 190, y + 40);
+            btnQuitarLogo.Name = "btnQuitarLogo";
+            btnQuitarLogo.Size = new Size(90, 30);
             btnQuitarLogo.Text = "Quitar";
-            btnQuitarLogo.Location = new Point(x1 + 300, y + 36);
-            btnQuitarLogo.Size = new Size(80, 28);
 
+            btnNuevo.Anchor = AnchorStyles.Bottom | AnchorStyles.Right;
+            btnNuevo.Location = new Point(555, 506);
+            btnNuevo.Name = "btnNuevo";
+            btnNuevo.Size = new Size(85, 32);
             btnNuevo.Text = "Nuevo";
-            btnNuevo.Location = new Point(560, 490);
-            btnNuevo.Size = new Size(80, 32);
 
+            btnGuardar.Anchor = AnchorStyles.Bottom | AnchorStyles.Right;
+            btnGuardar.Location = new Point(650, 506);
+            btnGuardar.Name = "btnGuardar";
+            btnGuardar.Size = new Size(85, 32);
             btnGuardar.Text = "Guardar";
-            btnGuardar.Location = new Point(650, 490);
-            btnGuardar.Size = new Size(80, 32);
 
+            btnEliminar.Anchor = AnchorStyles.Bottom | AnchorStyles.Right;
+            btnEliminar.Location = new Point(745, 506);
+            btnEliminar.Name = "btnEliminar";
+            btnEliminar.Size = new Size(85, 32);
             btnEliminar.Text = "Eliminar";
-            btnEliminar.Location = new Point(740, 490);
-            btnEliminar.Size = new Size(80, 32);
 
+            btnCerrar.Anchor = AnchorStyles.Bottom | AnchorStyles.Right;
+            btnCerrar.Location = new Point(840, 506);
+            btnCerrar.Name = "btnCerrar";
+            btnCerrar.Size = new Size(85, 32);
             btnCerrar.Text = "Cerrar";
-            btnCerrar.Location = new Point(830, 490);
-            btnCerrar.Size = new Size(80, 32);
 
-            ClientSize = new Size(930, 550);
-            Controls.AddRange(new Control[]
-            {
-                dgvEmpresas,
-                lblEmpresaId, txtEmpresaId,
-                lblRazonSocial, txtRazonSocial,
-                lblRNC, txtRNC,
-                lblMonedaBase, txtMonedaBase,
-                lblPais, txtPais,
-                lblProvincia, cbProvincia,
-                lblMunicipio, cbMunicipio,
-                lblDireccion, txtDireccion,
-                lblTelefono, txtTelefono,
-                lblEmail, txtEmail,
-                chkEstado,
-                lblLogo, picLogo, btnCargarLogo, btnQuitarLogo,
-                btnNuevo, btnGuardar, btnEliminar, btnCerrar
-            });
-
+            AutoScaleDimensions = new SizeF(7F, 15F);
+            AutoScaleMode = AutoScaleMode.Font;
+            ClientSize = new Size(940, 550);
+            Controls.Add(dgvEmpresas);
+            Controls.Add(lblEmpresaId);
+            Controls.Add(txtEmpresaId);
+            Controls.Add(lblRazonSocial);
+            Controls.Add(txtRazonSocial);
+            Controls.Add(lblRNC);
+            Controls.Add(txtRNC);
+            Controls.Add(lblMonedaBase);
+            Controls.Add(txtMonedaBase);
+            Controls.Add(lblPais);
+            Controls.Add(txtPais);
+            Controls.Add(lblProvincia);
+            Controls.Add(cbProvincia);
+            Controls.Add(lblMunicipio);
+            Controls.Add(cbMunicipio);
+            Controls.Add(lblDireccion);
+            Controls.Add(txtDireccion);
+            Controls.Add(lblTelefono);
+            Controls.Add(txtTelefono);
+            Controls.Add(lblEmail);
+            Controls.Add(txtEmail);
+            Controls.Add(chkEstado);
+            Controls.Add(lblLogo);
+            Controls.Add(picLogo);
+            Controls.Add(btnCargarLogo);
+            Controls.Add(btnQuitarLogo);
+            Controls.Add(btnNuevo);
+            Controls.Add(btnGuardar);
+            Controls.Add(btnEliminar);
+            Controls.Add(btnCerrar);
+            MinimumSize = new Size(956, 589);
+            Name = "FormEmpresaCrud";
             StartPosition = FormStartPosition.CenterScreen;
             Text = "Empresas";
+
             ((System.ComponentModel.ISupportInitialize)dgvEmpresas).EndInit();
             ((System.ComponentModel.ISupportInitialize)picLogo).EndInit();
             ResumeLayout(false);
@@ -225,3 +322,4 @@ namespace Andloe.Presentacion
         }
     }
 }
+#nullable restore

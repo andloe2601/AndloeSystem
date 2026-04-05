@@ -30,7 +30,7 @@ namespace Andloe.Presentacion
             btnNuevo.Click += btnNuevo_Click;
             btnGuardar.Click += btnGuardar_Click;
             btnEliminar.Click += btnEliminar_Click;
-            btnCerrar.Click += (_, __) => Close();
+            btnCerrar.Click += btnCerrar_Click;
             btnCargarLogo.Click += btnCargarLogo_Click;
             btnQuitarLogo.Click += btnQuitarLogo_Click;
         }
@@ -103,14 +103,14 @@ namespace Andloe.Presentacion
 
         private void dgvEmpresas_SelectionChanged(object? sender, EventArgs e)
         {
-            if (dgvEmpresas.CurrentRow?.DataBoundItem == null) return;
+            if (dgvEmpresas.CurrentRow == null) return;
             if (dgvEmpresas.CurrentRow.Cells["colEmpresaId"].Value == null) return;
 
             var empresaId = Convert.ToInt32(dgvEmpresas.CurrentRow.Cells["colEmpresaId"].Value);
-            var emp = _repo.ObtenerPorId(empresaId);
-            if (emp == null) return;
+            var empresa = _repo.ObtenerPorId(empresaId);
+            if (empresa == null) return;
 
-            CargarFormulario(emp);
+            CargarFormulario(empresa);
         }
 
         private void CargarFormulario(Empresa e)
@@ -121,14 +121,14 @@ namespace Andloe.Presentacion
                 txtEmpresaId.Text = e.EmpresaId.ToString();
                 txtRazonSocial.Text = e.RazonSocial;
                 txtRNC.Text = e.RNC;
-                txtMonedaBase.Text = e.MonedaBaseCodigo;
-                txtPais.Text = e.Pais ?? "DO";
+                txtMonedaBase.Text = string.IsNullOrWhiteSpace(e.MonedaBaseCodigo) ? "DOP" : e.MonedaBaseCodigo;
+                txtPais.Text = string.IsNullOrWhiteSpace(e.Pais) ? "DO" : e.Pais!;
                 txtDireccion.Text = e.Direccion ?? "";
                 txtTelefono.Text = e.Telefono ?? "";
                 txtEmail.Text = e.Email ?? "";
                 chkEstado.Checked = e.Estado;
-                _logoBytes = e.Logo;
 
+                _logoBytes = e.Logo;
                 CargarLogoEnPreview(_logoBytes);
 
                 if (e.MunicipioId.HasValue && e.MunicipioId.Value > 0)
@@ -143,7 +143,8 @@ namespace Andloe.Presentacion
                 }
                 else
                 {
-                    cbMunicipio.DataSource = null;
+                    if (cbProvincia.SelectedValue != null && int.TryParse(cbProvincia.SelectedValue.ToString(), out var provinciaId))
+                        CargarMunicipios(provinciaId);
                 }
             }
             finally
@@ -166,6 +167,7 @@ namespace Andloe.Presentacion
                 txtTelefono.Text = "";
                 txtEmail.Text = "";
                 chkEstado.Checked = true;
+
                 _logoBytes = null;
                 CargarLogoEnPreview(null);
 
@@ -183,68 +185,6 @@ namespace Andloe.Presentacion
             }
         }
 
-        private void btnNuevo_Click(object? sender, EventArgs e)
-        {
-            LimpiarFormulario();
-        }
-
-        private void btnGuardar_Click(object? sender, EventArgs e)
-        {
-            try
-            {
-                var empresa = ConstruirEntidadDesdeUI();
-
-                if (empresa.EmpresaId == 0)
-                    empresa.EmpresaId = _repo.Insertar(empresa);
-                else
-                    _repo.Actualizar(empresa);
-
-                MessageBox.Show("Empresa guardada correctamente.", "Empresa",
-                    MessageBoxButtons.OK, MessageBoxIcon.Information);
-
-                CargarEmpresas();
-                SeleccionarFila(empresa.EmpresaId);
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show("Error guardando empresa: " + ex.Message, "Empresa",
-                    MessageBoxButtons.OK, MessageBoxIcon.Error);
-            }
-        }
-
-        private void btnEliminar_Click(object? sender, EventArgs e)
-        {
-            try
-            {
-                if (!int.TryParse(txtEmpresaId.Text, out var empresaId) || empresaId <= 0)
-                {
-                    MessageBox.Show("Debes seleccionar una empresa.", "Empresa",
-                        MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                    return;
-                }
-
-                var ok = MessageBox.Show(
-                    "¿Eliminar esta empresa?",
-                    "Empresa",
-                    MessageBoxButtons.YesNo,
-                    MessageBoxIcon.Question);
-
-                if (ok != DialogResult.Yes) return;
-
-                _repo.Eliminar(empresaId);
-                MessageBox.Show("Empresa eliminada.", "Empresa",
-                    MessageBoxButtons.OK, MessageBoxIcon.Information);
-
-                CargarEmpresas();
-                LimpiarFormulario();
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show("Error eliminando empresa: " + ex.Message, "Empresa",
-                    MessageBoxButtons.OK, MessageBoxIcon.Error);
-            }
-        }
-
         private Empresa ConstruirEntidadDesdeUI()
         {
             if (string.IsNullOrWhiteSpace(txtRazonSocial.Text))
@@ -258,7 +198,7 @@ namespace Andloe.Presentacion
 
             var ub = _munRepo.ObtenerUbicacion(municipioId);
             if (!ub.HasValue)
-                throw new Exception("No se pudo resolver la provincia y municipio seleccionados.");
+                throw new Exception("No se pudo resolver la ubicación seleccionada.");
 
             return new Empresa
             {
@@ -266,16 +206,99 @@ namespace Andloe.Presentacion
                 RazonSocial = txtRazonSocial.Text.Trim(),
                 RNC = txtRNC.Text.Trim(),
                 MonedaBaseCodigo = string.IsNullOrWhiteSpace(txtMonedaBase.Text) ? "DOP" : txtMonedaBase.Text.Trim(),
-                Pais = txtPais.Text.Trim(),
-                Direccion = txtDireccion.Text.Trim(),
-                Telefono = txtTelefono.Text.Trim(),
-                Email = txtEmail.Text.Trim(),
+                Pais = string.IsNullOrWhiteSpace(txtPais.Text) ? "DO" : txtPais.Text.Trim(),
+                Direccion = string.IsNullOrWhiteSpace(txtDireccion.Text) ? null : txtDireccion.Text.Trim(),
+                Telefono = string.IsNullOrWhiteSpace(txtTelefono.Text) ? null : txtTelefono.Text.Trim(),
+                Email = string.IsNullOrWhiteSpace(txtEmail.Text) ? null : txtEmail.Text.Trim(),
                 Estado = chkEstado.Checked,
                 Logo = _logoBytes,
                 MunicipioId = municipioId,
                 Provincia = ub.Value.Provincia,
                 Ciudad = ub.Value.Municipio
             };
+        }
+
+        private void btnNuevo_Click(object? sender, EventArgs e)
+        {
+            LimpiarFormulario();
+        }
+
+        private void btnGuardar_Click(object? sender, EventArgs e)
+        {
+            try
+            {
+                var empresa = ConstruirEntidadDesdeUI();
+
+                if (empresa.EmpresaId <= 0)
+                    empresa.EmpresaId = _repo.Insertar(empresa);
+                else
+                    _repo.Actualizar(empresa);
+
+                MessageBox.Show(
+                    "Empresa guardada correctamente.",
+                    "Empresas",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Information);
+
+                CargarEmpresas();
+                SeleccionarFila(empresa.EmpresaId);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(
+                    "Error guardando empresa: " + ex.Message,
+                    "Empresas",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Error);
+            }
+        }
+
+        private void btnEliminar_Click(object? sender, EventArgs e)
+        {
+            try
+            {
+                if (!int.TryParse(txtEmpresaId.Text, out var empresaId) || empresaId <= 0)
+                {
+                    MessageBox.Show(
+                        "Debes seleccionar una empresa.",
+                        "Empresas",
+                        MessageBoxButtons.OK,
+                        MessageBoxIcon.Warning);
+                    return;
+                }
+
+                var r = MessageBox.Show(
+                    "¿Eliminar esta empresa?",
+                    "Empresas",
+                    MessageBoxButtons.YesNo,
+                    MessageBoxIcon.Question);
+
+                if (r != DialogResult.Yes) return;
+
+                _repo.Eliminar(empresaId);
+
+                MessageBox.Show(
+                    "Empresa eliminada.",
+                    "Empresas",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Information);
+
+                CargarEmpresas();
+                LimpiarFormulario();
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(
+                    "Error eliminando empresa: " + ex.Message,
+                    "Empresas",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Error);
+            }
+        }
+
+        private void btnCerrar_Click(object? sender, EventArgs e)
+        {
+            Close();
         }
 
         private void btnCargarLogo_Click(object? sender, EventArgs e)
@@ -317,8 +340,9 @@ namespace Andloe.Presentacion
         {
             foreach (DataGridViewRow row in dgvEmpresas.Rows)
             {
-                if (row.Cells["colEmpresaId"].Value != null &&
-                    Convert.ToInt32(row.Cells["colEmpresaId"].Value) == empresaId)
+                if (row.Cells["colEmpresaId"].Value == null) continue;
+
+                if (Convert.ToInt32(row.Cells["colEmpresaId"].Value) == empresaId)
                 {
                     row.Selected = true;
                     dgvEmpresas.CurrentCell = row.Cells["colRazonSocial"];

@@ -874,10 +874,7 @@ END;", cn);
                 var baseUrl = (txtAlanubeBaseUrl.Text ?? "").Trim().TrimEnd('/');
                 var token = LimpiarTokenAlanube(txtAlanubeToken.Text);
                 var idCompany = (txtAlanubeIdCompany.Text ?? "").Trim();
-
-                if (token.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
-                    token = token.Substring(7).Trim();
-
+                               
                 if (string.IsNullOrWhiteSpace(baseUrl))
                     throw new Exception("Debes indicar la Base URL de Alanube.");
 
