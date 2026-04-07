@@ -356,6 +356,8 @@ ORDER BY Codigo, Nombre;", cn);
 
             var alanubeBaseUrl = (txtAlanubeBaseUrl.Text ?? "").Trim();
             var alanubeToken = LimpiarTokenAlanube(txtAlanubeToken.Text);
+            if (!string.IsNullOrWhiteSpace(alanubeToken) && alanubeToken.Length < 100)
+                throw new Exception("El token de Alanube parece inválido o truncado.");
 
             var alanubeAmbiente = "sandbox";
             if (cbAlanubeAmbiente.Items.Count > 0 && cbAlanubeAmbiente.SelectedItem != null)
@@ -410,21 +412,7 @@ ORDER BY Codigo, Nombre;", cn);
             _cfgRepo.SetValor("ALMACEN_POS_ORIGEN_ID", almOri, "Almacén de ORIGEN por defecto para POS", "GENERAL", usuarioWindows);
             _cfgRepo.SetValor("ALMACEN_POS_DESTINO_ID", almDes, "Almacén de DESTINO por defecto para POS (0 = ninguno)", "GENERAL", usuarioWindows);
 
-            _cfgRepo.SetValor("ALANUBE_BASE_URL", alanubeBaseUrl, "Base URL Alanube DOM", "GENERAL", usuarioWindows);
-            _cfgRepo.SetValor("ALANUBE_TOKEN", alanubeToken, "Token Bearer Alanube", "GENERAL", usuarioWindows);
-            _cfgRepo.SetValor("ALANUBE_AMBIENTE", alanubeAmbiente, "Ambiente Alanube", "GENERAL", usuarioWindows);
-            _cfgRepo.SetValor(
-                "ALANUBE_TIMEOUT_SEGUNDOS",
-                string.IsNullOrWhiteSpace(alanubeTimeout) ? "60" : alanubeTimeout,
-                "Timeout HTTP Alanube",
-                "GENERAL",
-                usuarioWindows);
-            _cfgRepo.SetValor(
-                "ALANUBE_ID_COMPANY",
-                alanubeIdCompany,
-                "Id Company Alanube",
-                "GENERAL",
-                usuarioWindows);
+            _cfgRepo.SetValor("ALANUBE_ID_COMPANY", alanubeIdCompany, "Id Company Alanube", "GENERAL", usuarioWindows);
             _cfgRepo.SetValor(
                 "ALANUBE_RETRY_NUMBER",
                 string.IsNullOrWhiteSpace(alanubeRetryNumber) ? "1" : alanubeRetryNumber,
@@ -874,7 +862,10 @@ END;", cn);
                 var baseUrl = (txtAlanubeBaseUrl.Text ?? "").Trim().TrimEnd('/');
                 var token = LimpiarTokenAlanube(txtAlanubeToken.Text);
                 var idCompany = (txtAlanubeIdCompany.Text ?? "").Trim();
-                               
+
+                if (token.Length < 100)
+                    throw new Exception("El token de Alanube parece inválido o truncado.");
+                                                               
                 if (string.IsNullOrWhiteSpace(baseUrl))
                     throw new Exception("Debes indicar la Base URL de Alanube.");
 
@@ -1001,10 +992,10 @@ END;", cn);
             myForm.ShowDialog();
             this.Close();
         }
-    
 
 
-private async void btnCrearEmpresaAlanube_Click(object? sender, EventArgs e)
+
+        private async void btnCrearEmpresaAlanube_Click(object? sender, EventArgs e)
         {
             try
             {
@@ -1013,6 +1004,9 @@ private async void btnCrearEmpresaAlanube_Click(object? sender, EventArgs e)
 
                 if (string.IsNullOrWhiteSpace(baseUrl))
                     throw new Exception("Debes indicar la Base URL de Alanube.");
+
+                if (!Uri.TryCreate(baseUrl, UriKind.Absolute, out _))
+                    throw new Exception("La Base URL de Alanube no es válida.");
 
                 if (string.IsNullOrWhiteSpace(token))
                     throw new Exception("Debes indicar el token de Alanube.");

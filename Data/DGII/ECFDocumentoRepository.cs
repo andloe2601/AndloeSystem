@@ -518,5 +518,33 @@ UPDATE dbo.ECFDocumento
             cmd.ExecuteNonQuery();
         }
 
+        public ECFDocumento? ObtenerDocumentoPorFactura(long facturaId)
+        {
+            using var cn = Db.GetOpenConnection();
+
+            using var cmd = new SqlCommand(@"
+        SELECT TOP 1 *
+        FROM ECFDocumento
+        WHERE FacturaId = @FacturaId
+        ORDER BY ECFDocumentoId DESC", cn);
+
+            cmd.Parameters.AddWithValue("@FacturaId", facturaId);
+
+            using var rd = cmd.ExecuteReader();
+
+            if (!rd.Read()) return null;
+
+            return new ECFDocumento
+            {
+                ECFDocumentoId = Convert.ToInt64(rd["ECFDocumentoId"]),
+                FacturaId = Convert.ToInt64(rd["FacturaId"]),
+                ENCF = rd["ENCF"]?.ToString(),
+                TrackId = rd["TrackId"]?.ToString(),
+                XmlRespuesta = rd["XmlRespuesta"]?.ToString(),
+                XmlEnviado = rd["XmlEnviado"]?.ToString(),
+                EstadoDGII = rd["EstadoDGII"]?.ToString()
+            };
+        }
+
     }
 }

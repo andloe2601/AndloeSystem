@@ -7,368 +7,406 @@
         #region Windows Form Designer generated code
         private void InitializeComponent()
         {
-            this.components = new System.ComponentModel.Container();
+            components = new System.ComponentModel.Container();
+            DataGridViewCellStyle dataGridViewCellStyle1 = new DataGridViewCellStyle();
+            DataGridViewCellStyle dataGridViewCellStyle2 = new DataGridViewCellStyle();
+            headerPanel = new Panel();
+            actionFlow = new FlowLayoutPanel();
+            btnRefrescar = new Button();
+            btnNuevo = new Button();
+            btnEditar = new Button();
+            btnEliminar = new Button();
+            btnDetalle = new Button();
+            btnEditarForm = new Button();
+            searchContainer = new Panel();
+            picSearch = new PictureBox();
+            txtBuscar = new TextBox();
+            btnLimpiarBusqueda = new Button();
+            lblTitulo = new Label();
+            mainPadding = new Panel();
+            cardPanel = new Panel();
+            dgvUsuarios = new DataGridView();
+            ctxMenu = new ContextMenuStrip(components);
+            ctxMenuNuevo = new ToolStripMenuItem();
+            ctxMenuEditar = new ToolStripMenuItem();
+            ctxMenuEliminar = new ToolStripMenuItem();
+            emptyPanel = new Panel();
+            lblEmptyTitle = new Label();
+            lblEmptyDesc = new Label();
+            btnEmptyNew = new Button();
+            statusStrip = new StatusStrip();
+            lblInfo = new ToolStripStatusLabel();
+            toolProgress = new ToolStripProgressBar();
+            toolTip = new ToolTip(components);
+            headerPanel.SuspendLayout();
+            actionFlow.SuspendLayout();
+            searchContainer.SuspendLayout();
+            ((System.ComponentModel.ISupportInitialize)picSearch).BeginInit();
+            mainPadding.SuspendLayout();
+            cardPanel.SuspendLayout();
+            ((System.ComponentModel.ISupportInitialize)dgvUsuarios).BeginInit();
+            ctxMenu.SuspendLayout();
+            emptyPanel.SuspendLayout();
+            statusStrip.SuspendLayout();
+            SuspendLayout();
+            // 
+            // headerPanel
+            // 
+            headerPanel.BackColor = Color.White;
+            headerPanel.Controls.Add(actionFlow);
+            headerPanel.Controls.Add(searchContainer);
+            headerPanel.Controls.Add(lblTitulo);
+            headerPanel.Dock = DockStyle.Top;
+            headerPanel.Location = new Point(0, 0);
+            headerPanel.Name = "headerPanel";
+            headerPanel.Padding = new Padding(20, 18, 20, 12);
+            headerPanel.Size = new Size(1000, 96);
+            headerPanel.TabIndex = 2;
+            actionFlow.Controls.Add(btnRefrescar);
+            actionFlow.Controls.Add(btnNuevo);
+            actionFlow.Controls.Add(btnEditar);
+            actionFlow.Controls.Add(btnEliminar);
+            actionFlow.Controls.Add(btnDetalle);
+            actionFlow.Controls.Add(btnEditarForm);
+            // 
 
-            // Top gradient header (Paint handler added in code-behind)
-            this.headerPanel = new System.Windows.Forms.Panel();
-            this.lblTitulo = new System.Windows.Forms.Label();
-
-            // Search box with icon and clear button
-            this.searchContainer = new System.Windows.Forms.Panel();
-            this.picSearch = new System.Windows.Forms.PictureBox();
-            this.txtBuscar = new System.Windows.Forms.TextBox();
-            this.btnLimpiarBusqueda = new System.Windows.Forms.Button();
-
-            // Right-side actions (modern buttons)
-            this.actionFlow = new System.Windows.Forms.FlowLayoutPanel();
-            this.btnRefrescar = new System.Windows.Forms.Button();
-            this.btnNuevo = new System.Windows.Forms.Button();
-            this.btnEditar = new System.Windows.Forms.Button();
-            this.btnEliminar = new System.Windows.Forms.Button();
-
-            // Main content area with "card" look
-            this.mainPadding = new System.Windows.Forms.Panel();
-            this.cardPanel = new System.Windows.Forms.Panel();
-            this.dgvUsuarios = new System.Windows.Forms.DataGridView();
-
-            // Columns (names preserved)
-            this.colId = new System.Windows.Forms.DataGridViewTextBoxColumn();
-            this.colUsuario = new System.Windows.Forms.DataGridViewTextBoxColumn();
-            this.colEmail = new System.Windows.Forms.DataGridViewTextBoxColumn();
-            this.colEstado = new System.Windows.Forms.DataGridViewTextBoxColumn();
-            this.colUltimoAcceso = new System.Windows.Forms.DataGridViewTextBoxColumn();
-
-            // Empty-state friendly overlay
-            this.emptyPanel = new System.Windows.Forms.Panel();
-            this.lblEmptyTitle = new System.Windows.Forms.Label();
-            this.lblEmptyDesc = new System.Windows.Forms.Label();
-            this.btnEmptyNew = new System.Windows.Forms.Button();
-
-            // Status strip with info and progress
-            this.statusStrip = new System.Windows.Forms.StatusStrip();
-            this.lblInfo = new System.Windows.Forms.ToolStripStatusLabel();
-            this.toolProgress = new System.Windows.Forms.ToolStripProgressBar();
-
-            // Context menu for grid
-            this.ctxMenu = new System.Windows.Forms.ContextMenuStrip(this.components);
-            this.ctxMenuNuevo = new System.Windows.Forms.ToolStripMenuItem();
-            this.ctxMenuEditar = new System.Windows.Forms.ToolStripMenuItem();
-            this.ctxMenuEliminar = new System.Windows.Forms.ToolStripMenuItem();
-
-            // Tooltips
-            this.toolTip = new System.Windows.Forms.ToolTip(this.components);
-
-            // Begin layout
-            this.headerPanel.SuspendLayout();
-            this.searchContainer.SuspendLayout();
-            ((System.ComponentModel.ISupportInitialize)(this.picSearch)).BeginInit();
-            this.actionFlow.SuspendLayout();
-            this.mainPadding.SuspendLayout();
-            this.cardPanel.SuspendLayout();
-            ((System.ComponentModel.ISupportInitialize)(this.dgvUsuarios)).BeginInit();
-            this.emptyPanel.SuspendLayout();
-            this.statusStrip.SuspendLayout();
-            this.ctxMenu.SuspendLayout();
-            this.SuspendLayout();
-
-            // headerPanel - modern gradient header
-            this.headerPanel.Dock = System.Windows.Forms.DockStyle.Top;
-            this.headerPanel.Height = 96;
-            this.headerPanel.Padding = new System.Windows.Forms.Padding(20, 18, 20, 12);
-            this.headerPanel.BackColor = System.Drawing.Color.White;
-            this.headerPanel.Controls.Add(this.actionFlow);
-            this.headerPanel.Controls.Add(this.searchContainer);
-            this.headerPanel.Controls.Add(this.lblTitulo);
-            this.headerPanel.Name = "headerPanel";
-
-            // lblTitulo - title
-            this.lblTitulo.AutoSize = true;
-            this.lblTitulo.Font = new System.Drawing.Font("Segoe UI Semibold", 18F, System.Drawing.FontStyle.Bold);
-            this.lblTitulo.ForeColor = System.Drawing.Color.FromArgb(34, 40, 49);
-            this.lblTitulo.Location = new System.Drawing.Point(20, 26);
-            this.lblTitulo.Name = "lblTitulo";
-            this.lblTitulo.Text = "Usuarios";
-
-            // searchContainer - rounded search appearance
-            this.searchContainer.BackColor = System.Drawing.Color.FromArgb(245, 247, 250);
-            this.searchContainer.BorderStyle = System.Windows.Forms.BorderStyle.None;
-            this.searchContainer.Padding = new System.Windows.Forms.Padding(12, 8, 8, 8);
-            this.searchContainer.Location = new System.Drawing.Point(200, 30);
-            this.searchContainer.Name = "searchContainer";
-            this.searchContainer.Size = new System.Drawing.Size(460, 36);
-            this.searchContainer.Anchor = System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Left;
-
-            // picSearch - icon placeholder
-            this.picSearch.Location = new System.Drawing.Point(12, 8);
-            this.picSearch.Size = new System.Drawing.Size(20, 20);
-            this.picSearch.SizeMode = System.Windows.Forms.PictureBoxSizeMode.CenterImage;
-            this.picSearch.Name = "picSearch";
-            this.picSearch.TabStop = false;
-            // Optionally set an image in code-behind: picSearch.Image = Properties.Resources.icon_search;
-
-            // txtBuscar
-            this.txtBuscar.BorderStyle = System.Windows.Forms.BorderStyle.None;
-            this.txtBuscar.Font = new System.Drawing.Font("Segoe UI", 9F);
-            this.txtBuscar.BackColor = System.Drawing.Color.FromArgb(245, 247, 250);
-            this.txtBuscar.Location = new System.Drawing.Point(44, 10);
-            this.txtBuscar.Name = "txtBuscar";
-            this.txtBuscar.PlaceholderText = "Buscar por usuario o correo (Enter para buscar)";
-            this.txtBuscar.Width = 340;
-
-            // btnLimpiarBusqueda
-            this.btnLimpiarBusqueda.FlatStyle = System.Windows.Forms.FlatStyle.Flat;
-            this.btnLimpiarBusqueda.FlatAppearance.BorderSize = 0;
-            this.btnLimpiarBusqueda.BackColor = System.Drawing.Color.Transparent;
-            this.btnLimpiarBusqueda.Cursor = System.Windows.Forms.Cursors.Hand;
-            this.btnLimpiarBusqueda.Size = new System.Drawing.Size(22, 22);
-            this.btnLimpiarBusqueda.Location = new System.Drawing.Point(412, 7);
-            this.btnLimpiarBusqueda.Name = "btnLimpiarBusqueda";
-            this.btnLimpiarBusqueda.Text = "✕";
-            this.btnLimpiarBusqueda.UseVisualStyleBackColor = true;
-            this.toolTip.SetToolTip(this.btnLimpiarBusqueda, "Limpiar búsqueda");
-
-            // Add search children
-            this.searchContainer.Controls.Add(this.picSearch);
-            this.searchContainer.Controls.Add(this.txtBuscar);
-            this.searchContainer.Controls.Add(this.btnLimpiarBusqueda);
-
-            // actionFlow - right-aligned modern buttons
-            this.actionFlow.Anchor = System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Right;
-            this.actionFlow.FlowDirection = System.Windows.Forms.FlowDirection.RightToLeft;
-            this.actionFlow.Location = new System.Drawing.Point(680, 24);
-            this.actionFlow.Name = "actionFlow";
-            this.actionFlow.Size = new System.Drawing.Size(300, 48);
-            this.actionFlow.Padding = new System.Windows.Forms.Padding(0, 6, 0, 0);
-
+            // searchContainer
+            searchContainer.BackColor = Color.FromArgb(245, 247, 250);
+            searchContainer.Controls.Add(picSearch);
+            searchContainer.Controls.Add(txtBuscar);
+            searchContainer.Controls.Add(btnLimpiarBusqueda);
+            searchContainer.Location = new Point(200, 30);
+            searchContainer.Name = "searchContainer";
+            searchContainer.Padding = new Padding(12, 8, 8, 8);
+            searchContainer.Size = new Size(380, 36);
+            searchContainer.TabIndex = 1;
+            // 
             // btnRefrescar
-            this.btnRefrescar.FlatStyle = System.Windows.Forms.FlatStyle.Flat;
-            this.btnRefrescar.FlatAppearance.BorderSize = 0;
-            this.btnRefrescar.BackColor = System.Drawing.Color.FromArgb(245, 247, 250);
-            this.btnRefrescar.ForeColor = System.Drawing.Color.FromArgb(36, 41, 45);
-            this.btnRefrescar.Margin = new System.Windows.Forms.Padding(8, 6, 0, 6);
-            this.btnRefrescar.Name = "btnRefrescar";
-            this.btnRefrescar.Size = new System.Drawing.Size(88, 36);
-            this.btnRefrescar.Text = "Refrescar";
-            this.btnRefrescar.UseVisualStyleBackColor = true;
-
+            // 
+            btnRefrescar.BackColor = Color.FromArgb(245, 247, 250);
+            btnRefrescar.FlatAppearance.BorderSize = 0;
+            btnRefrescar.FlatStyle = FlatStyle.Flat;
+            btnRefrescar.ForeColor = Color.FromArgb(36, 41, 45);
+            btnRefrescar.Location = new Point(572, 12);
+            btnRefrescar.Margin = new Padding(6, 6, 0, 6);
+            btnRefrescar.Name = "btnRefrescar";
+            btnRefrescar.Size = new Size(88, 32);
+            btnRefrescar.TabIndex = 0;
+            btnRefrescar.Text = "Refrescar";
+            btnRefrescar.UseVisualStyleBackColor = true;
+            // 
             // btnNuevo
-            this.btnNuevo.FlatStyle = System.Windows.Forms.FlatStyle.Flat;
-            this.btnNuevo.FlatAppearance.BorderSize = 0;
-            this.btnNuevo.BackColor = System.Drawing.Color.FromArgb(0, 123, 255);
-            this.btnNuevo.ForeColor = System.Drawing.Color.White;
-            this.btnNuevo.Margin = new System.Windows.Forms.Padding(8, 6, 0, 6);
-            this.btnNuevo.Name = "btnNuevo";
-            this.btnNuevo.Size = new System.Drawing.Size(88, 36);
-            this.btnNuevo.Text = "Nuevo";
-            this.btnNuevo.UseVisualStyleBackColor = true;
-
+            // 
+            btnNuevo.BackColor = Color.FromArgb(0, 123, 255);
+            btnNuevo.FlatAppearance.BorderSize = 0;
+            btnNuevo.FlatStyle = FlatStyle.Flat;
+            btnNuevo.ForeColor = Color.White;
+            btnNuevo.Location = new Point(476, 12);
+            btnNuevo.Margin = new Padding(6, 6, 0, 6);
+            btnNuevo.Name = "btnNuevo";
+            btnNuevo.Size = new Size(75, 32);
+            btnNuevo.TabIndex = 1;
+            btnNuevo.Text = "Nuevo";
+            btnNuevo.UseVisualStyleBackColor = true;
+            // 
             // btnEditar
-            this.btnEditar.FlatStyle = System.Windows.Forms.FlatStyle.Flat;
-            this.btnEditar.FlatAppearance.BorderSize = 0;
-            this.btnEditar.BackColor = System.Drawing.Color.FromArgb(40, 167, 69);
-            this.btnEditar.ForeColor = System.Drawing.Color.White;
-            this.btnEditar.Margin = new System.Windows.Forms.Padding(8, 6, 0, 6);
-            this.btnEditar.Name = "btnEditar";
-            this.btnEditar.Size = new System.Drawing.Size(88, 36);
-            this.btnEditar.Text = "Editar";
-            this.btnEditar.UseVisualStyleBackColor = true;
-
+            // 
+            btnEditar.BackColor = Color.FromArgb(40, 167, 69);
+            btnEditar.FlatAppearance.BorderSize = 0;
+            btnEditar.FlatStyle = FlatStyle.Flat;
+            btnEditar.ForeColor = Color.White;
+            btnEditar.Location = new Point(380, 12);
+            btnEditar.Margin = new Padding(6, 6, 0, 6);
+            btnEditar.Name = "btnEditar";
+            btnEditar.Size = new Size(75, 32);
+            btnEditar.TabIndex = 2;
+            btnEditar.Text = "Editar";
+            btnEditar.UseVisualStyleBackColor = true;
+            // 
             // btnEliminar
-            this.btnEliminar.FlatStyle = System.Windows.Forms.FlatStyle.Flat;
-            this.btnEliminar.FlatAppearance.BorderSize = 0;
-            this.btnEliminar.BackColor = System.Drawing.Color.FromArgb(220, 53, 69);
-            this.btnEliminar.ForeColor = System.Drawing.Color.White;
-            this.btnEliminar.Margin = new System.Windows.Forms.Padding(8, 6, 0, 6);
-            this.btnEliminar.Name = "btnEliminar";
-            this.btnEliminar.Size = new System.Drawing.Size(88, 36);
-            this.btnEliminar.Text = "Eliminar";
-            this.btnEliminar.UseVisualStyleBackColor = true;
-
-            // Add buttons to flow
-            this.actionFlow.Controls.Add(this.btnRefrescar);
-            this.actionFlow.Controls.Add(this.btnNuevo);
-            this.actionFlow.Controls.Add(this.btnEditar);
-            this.actionFlow.Controls.Add(this.btnEliminar);
-
+            // 
+            btnEliminar.BackColor = Color.FromArgb(220, 53, 69);
+            btnEliminar.FlatAppearance.BorderSize = 0;
+            btnEliminar.FlatStyle = FlatStyle.Flat;
+            btnEliminar.ForeColor = Color.White;
+            btnEliminar.Location = new Point(284, 12);
+            btnEliminar.Margin = new Padding(6, 6, 0, 6);
+            btnEliminar.Name = "btnEliminar";
+            btnEliminar.Size = new Size(80, 32);
+            btnEliminar.TabIndex = 3;
+            btnEliminar.Text = "Eliminar";
+            btnEliminar.UseVisualStyleBackColor = true;
+            // 
+            // btnDetalle
+            // 
+            btnDetalle.BackColor = Color.FromArgb(108, 117, 125);
+            btnDetalle.FlatAppearance.BorderSize = 0;
+            btnDetalle.FlatStyle = FlatStyle.Flat;
+            btnDetalle.ForeColor = Color.White;
+            btnDetalle.Location = new Point(188, 12);
+            btnDetalle.Margin = new Padding(6, 6, 0, 6);
+            btnDetalle.Name = "btnDetalle";
+            btnDetalle.Size = new Size(75, 32);
+            btnDetalle.TabIndex = 4;
+            btnDetalle.Text = "Detalle";
+            btnDetalle.UseVisualStyleBackColor = true;
+            // 
+            // btnEditarForm
+            // 
+            btnEditarForm.BackColor = Color.FromArgb(111, 66, 193);
+            btnEditarForm.FlatAppearance.BorderSize = 0;
+            btnEditarForm.FlatStyle = FlatStyle.Flat;
+            btnEditarForm.ForeColor = Color.White;
+            btnEditarForm.Location = new Point(84, 12);
+            btnEditarForm.Margin = new Padding(6, 6, 0, 6);
+            btnEditarForm.Name = "btnEditarForm";
+            btnEditarForm.Size = new Size(90, 32);
+            btnEditarForm.TabIndex = 5;
+            btnEditarForm.Text = "Edit Form";
+            btnEditarForm.UseVisualStyleBackColor = true;
+            // 
+            // searchContainer
+            // 
+            searchContainer.BackColor = Color.FromArgb(245, 247, 250);
+            searchContainer.Controls.Add(picSearch);
+            searchContainer.Controls.Add(txtBuscar);
+            searchContainer.Controls.Add(btnLimpiarBusqueda);
+            searchContainer.Location = new Point(200, 30);
+            searchContainer.Name = "searchContainer";
+            searchContainer.Padding = new Padding(12, 8, 8, 8);
+            searchContainer.Size = new Size(380, 36);
+            searchContainer.TabIndex = 1;
+            // 
+            // picSearch
+            // 
+            picSearch.Location = new Point(12, 8);
+            picSearch.Name = "picSearch";
+            picSearch.Size = new Size(20, 20);
+            picSearch.SizeMode = PictureBoxSizeMode.CenterImage;
+            picSearch.TabIndex = 0;
+            picSearch.TabStop = false;
+            // 
+            // txtBuscar
+            // 
+            txtBuscar.BackColor = Color.FromArgb(245, 247, 250);
+            txtBuscar.BorderStyle = BorderStyle.None;
+            txtBuscar.Font = new Font("Segoe UI", 9F);
+            txtBuscar.Location = new Point(44, 10);
+            txtBuscar.Name = "txtBuscar";
+            txtBuscar.PlaceholderText = "Buscar por usuario o correo (Enter para buscar)";
+            txtBuscar.Size = new Size(340, 16);
+            txtBuscar.TabIndex = 1;
+            // 
+            // btnLimpiarBusqueda
+            // 
+            btnLimpiarBusqueda.BackColor = Color.Transparent;
+            btnLimpiarBusqueda.Cursor = Cursors.Hand;
+            btnLimpiarBusqueda.FlatAppearance.BorderSize = 0;
+            btnLimpiarBusqueda.FlatStyle = FlatStyle.Flat;
+            btnLimpiarBusqueda.Location = new Point(412, 7);
+            btnLimpiarBusqueda.Name = "btnLimpiarBusqueda";
+            btnLimpiarBusqueda.Size = new Size(22, 22);
+            btnLimpiarBusqueda.TabIndex = 2;
+            btnLimpiarBusqueda.Text = "✕";
+            toolTip.SetToolTip(btnLimpiarBusqueda, "Limpiar búsqueda");
+            btnLimpiarBusqueda.UseVisualStyleBackColor = true;
+            // 
+            // lblTitulo
+            // 
+            lblTitulo.AutoSize = true;
+            lblTitulo.Font = new Font("Segoe UI Semibold", 18F, FontStyle.Bold);
+            lblTitulo.ForeColor = Color.FromArgb(34, 40, 49);
+            lblTitulo.Location = new Point(20, 26);
+            lblTitulo.Name = "lblTitulo";
+            lblTitulo.Size = new Size(107, 32);
+            lblTitulo.TabIndex = 2;
+            lblTitulo.Text = "Usuarios";
+            // 
             // mainPadding
-            this.mainPadding.Dock = System.Windows.Forms.DockStyle.Fill;
-            this.mainPadding.Padding = new System.Windows.Forms.Padding(20);
-            this.mainPadding.BackColor = System.Drawing.Color.FromArgb(248, 249, 250);
-            this.mainPadding.Controls.Add(this.cardPanel);
-            this.mainPadding.Name = "mainPadding";
-
+            // 
+            mainPadding.BackColor = Color.FromArgb(248, 249, 250);
+            mainPadding.Controls.Add(cardPanel);
+            mainPadding.Dock = DockStyle.Fill;
+            mainPadding.Location = new Point(0, 96);
+            mainPadding.Name = "mainPadding";
+            mainPadding.Padding = new Padding(20);
+            mainPadding.Size = new Size(1000, 522);
+            mainPadding.TabIndex = 1;
+            // 
             // cardPanel
-            this.cardPanel.Dock = System.Windows.Forms.DockStyle.Fill;
-            this.cardPanel.BackColor = System.Drawing.Color.White;
-            this.cardPanel.Padding = new System.Windows.Forms.Padding(14);
-            this.cardPanel.BorderStyle = System.Windows.Forms.BorderStyle.FixedSingle;
-            this.cardPanel.Controls.Add(this.dgvUsuarios);
-            this.cardPanel.Controls.Add(this.emptyPanel);
-            this.cardPanel.Name = "cardPanel";
-
+            // 
+            cardPanel.BackColor = Color.White;
+            cardPanel.BorderStyle = BorderStyle.FixedSingle;
+            cardPanel.Controls.Add(dgvUsuarios);
+            cardPanel.Controls.Add(emptyPanel);
+            cardPanel.Dock = DockStyle.Fill;
+            cardPanel.Location = new Point(20, 20);
+            cardPanel.Name = "cardPanel";
+            cardPanel.Padding = new Padding(14);
+            cardPanel.Size = new Size(960, 482);
+            cardPanel.TabIndex = 0;
+            // 
             // dgvUsuarios
-            this.dgvUsuarios.AllowUserToAddRows = false;
-            this.dgvUsuarios.AllowUserToDeleteRows = false;
-            this.dgvUsuarios.AutoGenerateColumns = false;
-            this.dgvUsuarios.BackgroundColor = System.Drawing.Color.White;
-            this.dgvUsuarios.BorderStyle = System.Windows.Forms.BorderStyle.None;
-            this.dgvUsuarios.ColumnHeadersHeightSizeMode = System.Windows.Forms.DataGridViewColumnHeadersHeightSizeMode.AutoSize;
-            this.dgvUsuarios.Columns.AddRange(new System.Windows.Forms.DataGridViewColumn[] {
-                this.colId, this.colUsuario, this.colEmail, this.colEstado, this.colUltimoAcceso
-            });
-            this.dgvUsuarios.ContextMenuStrip = this.ctxMenu;
-            this.dgvUsuarios.Dock = System.Windows.Forms.DockStyle.Fill;
-            this.dgvUsuarios.Location = new System.Drawing.Point(14, 14);
-            this.dgvUsuarios.MultiSelect = false;
-            this.dgvUsuarios.Name = "dgvUsuarios";
-            this.dgvUsuarios.ReadOnly = true;
-            this.dgvUsuarios.RowHeadersVisible = false;
-            this.dgvUsuarios.SelectionMode = System.Windows.Forms.DataGridViewSelectionMode.FullRowSelect;
-            this.dgvUsuarios.Size = new System.Drawing.Size(860, 420);
-            this.dgvUsuarios.EnableHeadersVisualStyles = false;
-            this.dgvUsuarios.ColumnHeadersDefaultCellStyle.BackColor = System.Drawing.Color.FromArgb(38, 50, 56);
-            this.dgvUsuarios.ColumnHeadersDefaultCellStyle.ForeColor = System.Drawing.Color.White;
-            this.dgvUsuarios.ColumnHeadersDefaultCellStyle.Font = new System.Drawing.Font("Segoe UI", 9F, System.Drawing.FontStyle.Bold);
-            this.dgvUsuarios.AlternatingRowsDefaultCellStyle.BackColor = System.Drawing.Color.FromArgb(249, 250, 252);
-            this.dgvUsuarios.RowTemplate.Height = 28;
-            this.dgvUsuarios.GridColor = System.Drawing.Color.FromArgb(235, 236, 240);
-            this.dgvUsuarios.Font = new System.Drawing.Font("Segoe UI", 9F);
-
-            // Default selection style will be applied in code-behind for cross-version safety.
-
-            // Columns definition
-            this.colId.DataPropertyName = "UsuarioId";
-            this.colId.HeaderText = "ID";
-            this.colId.Name = "colId";
-            this.colId.ReadOnly = true;
-            this.colId.Width = 70;
-            this.colId.DefaultCellStyle.Alignment = System.Windows.Forms.DataGridViewContentAlignment.MiddleCenter;
-
-            this.colUsuario.DataPropertyName = "UsuarioNombre";
-            this.colUsuario.HeaderText = "Usuario";
-            this.colUsuario.Name = "colUsuario";
-            this.colUsuario.ReadOnly = true;
-            this.colUsuario.Width = 240;
-
-            this.colEmail.DataPropertyName = "Email";
-            this.colEmail.HeaderText = "Email";
-            this.colEmail.Name = "colEmail";
-            this.colEmail.ReadOnly = true;
-            this.colEmail.Width = 300;
-
-            this.colEstado.DataPropertyName = "Estado";
-            this.colEstado.HeaderText = "Estado";
-            this.colEstado.Name = "colEstado";
-            this.colEstado.ReadOnly = true;
-            this.colEstado.Width = 120;
-            this.colEstado.DefaultCellStyle.Alignment = System.Windows.Forms.DataGridViewContentAlignment.MiddleCenter;
-
-            this.colUltimoAcceso.DataPropertyName = "UltimoAcceso";
-            this.colUltimoAcceso.HeaderText = "Último acceso";
-            this.colUltimoAcceso.Name = "colUltimoAcceso";
-            this.colUltimoAcceso.ReadOnly = true;
-            this.colUltimoAcceso.Width = 200;
-            this.colUltimoAcceso.DefaultCellStyle.Format = "g";
-
-            // emptyPanel
-            this.emptyPanel.Dock = System.Windows.Forms.DockStyle.Fill;
-            this.emptyPanel.BackColor = System.Drawing.Color.Transparent;
-            this.emptyPanel.Controls.Add(this.lblEmptyTitle);
-            this.emptyPanel.Controls.Add(this.lblEmptyDesc);
-            this.emptyPanel.Controls.Add(this.btnEmptyNew);
-            this.emptyPanel.Name = "emptyPanel";
-            this.emptyPanel.Visible = false;
-
-            this.lblEmptyTitle.AutoSize = true;
-            this.lblEmptyTitle.Font = new System.Drawing.Font("Segoe UI", 14F, System.Drawing.FontStyle.Bold);
-            this.lblEmptyTitle.ForeColor = System.Drawing.Color.FromArgb(54, 62, 71);
-            this.lblEmptyTitle.Location = new System.Drawing.Point(40, 80);
-            this.lblEmptyTitle.Text = "No hay usuarios";
-
-            this.lblEmptyDesc.AutoSize = true;
-            this.lblEmptyDesc.Font = new System.Drawing.Font("Segoe UI", 10F);
-            this.lblEmptyDesc.ForeColor = System.Drawing.Color.Gray;
-            this.lblEmptyDesc.Location = new System.Drawing.Point(40, 120);
-            this.lblEmptyDesc.MaximumSize = new System.Drawing.Size(520, 0);
-            this.lblEmptyDesc.Text = "Aún no hay registros. Usa el botón \"Nuevo\" para crear tu primer usuario o importa usuarios desde un archivo.";
-
-            this.btnEmptyNew.FlatStyle = System.Windows.Forms.FlatStyle.Flat;
-            this.btnEmptyNew.BackColor = System.Drawing.Color.FromArgb(0, 123, 255);
-            this.btnEmptyNew.ForeColor = System.Drawing.Color.White;
-            this.btnEmptyNew.Location = new System.Drawing.Point(40, 170);
-            this.btnEmptyNew.Size = new System.Drawing.Size(140, 36);
-            this.btnEmptyNew.Text = "Nuevo usuario";
-            this.btnEmptyNew.UseVisualStyleBackColor = true;
-
-            // statusStrip
-            this.statusStrip.Items.AddRange(new System.Windows.Forms.ToolStripItem[] {
-                this.lblInfo,
-                this.toolProgress
-            });
-            this.statusStrip.Dock = System.Windows.Forms.DockStyle.Bottom;
-            this.statusStrip.BackColor = System.Drawing.Color.WhiteSmoke;
-            this.statusStrip.Name = "statusStrip";
-            this.statusStrip.Size = new System.Drawing.Size(1000, 26);
-
-            this.lblInfo.Name = "lblInfo";
-            this.lblInfo.Text = "Listo";
-
-            this.toolProgress.Name = "toolProgress";
-            this.toolProgress.Size = new System.Drawing.Size(120, 16);
-            this.toolProgress.Style = System.Windows.Forms.ProgressBarStyle.Marquee;
-            this.toolProgress.Visible = false;
-
+            // 
+            dgvUsuarios.AllowUserToAddRows = false;
+            dgvUsuarios.AllowUserToDeleteRows = false;
+            dataGridViewCellStyle1.BackColor = Color.FromArgb(249, 250, 252);
+            dgvUsuarios.AlternatingRowsDefaultCellStyle = dataGridViewCellStyle1;
+            dgvUsuarios.BackgroundColor = Color.White;
+            dgvUsuarios.BorderStyle = BorderStyle.None;
+            dataGridViewCellStyle2.Alignment = DataGridViewContentAlignment.MiddleLeft;
+            dataGridViewCellStyle2.BackColor = Color.FromArgb(38, 50, 56);
+            dataGridViewCellStyle2.Font = new Font("Segoe UI", 9F, FontStyle.Bold);
+            dataGridViewCellStyle2.ForeColor = Color.White;
+            dataGridViewCellStyle2.SelectionBackColor = SystemColors.Highlight;
+            dataGridViewCellStyle2.SelectionForeColor = SystemColors.HighlightText;
+            dataGridViewCellStyle2.WrapMode = DataGridViewTriState.True;
+            dgvUsuarios.ColumnHeadersDefaultCellStyle = dataGridViewCellStyle2;
+            dgvUsuarios.ColumnHeadersHeightSizeMode = DataGridViewColumnHeadersHeightSizeMode.AutoSize;
+            dgvUsuarios.ContextMenuStrip = ctxMenu;
+            dgvUsuarios.Dock = DockStyle.Fill;
+            dgvUsuarios.EnableHeadersVisualStyles = false;
+            dgvUsuarios.Font = new Font("Segoe UI", 9F);
+            dgvUsuarios.GridColor = Color.FromArgb(235, 236, 240);
+            dgvUsuarios.Location = new Point(14, 14);
+            dgvUsuarios.MultiSelect = false;
+            dgvUsuarios.Name = "dgvUsuarios";
+            dgvUsuarios.ReadOnly = true;
+            dgvUsuarios.RowHeadersVisible = false;
+            dgvUsuarios.RowTemplate.Height = 28;
+            dgvUsuarios.SelectionMode = DataGridViewSelectionMode.FullRowSelect;
+            dgvUsuarios.Size = new Size(930, 452);
+            dgvUsuarios.TabIndex = 0;
+            // 
             // ctxMenu
-            this.ctxMenu.ImageScalingSize = new System.Drawing.Size(18, 18);
-            this.ctxMenu.Items.AddRange(new System.Windows.Forms.ToolStripItem[] {
-                this.ctxMenuNuevo,
-                this.ctxMenuEditar,
-                this.ctxMenuEliminar
-            });
-            this.ctxMenu.Name = "ctxMenu";
-
-            this.ctxMenuNuevo.Name = "ctxMenuNuevo";
-            this.ctxMenuNuevo.Text = "Nuevo";
-
-            this.ctxMenuEditar.Name = "ctxMenuEditar";
-            this.ctxMenuEditar.Text = "Editar";
-
-            this.ctxMenuEliminar.Name = "ctxMenuEliminar";
-            this.ctxMenuEliminar.Text = "Eliminar";
-
-            // Tooltips defaults
-            this.toolTip.AutoPopDelay = 5000;
-            this.toolTip.InitialDelay = 600;
-            this.toolTip.ReshowDelay = 120;
-
-            // FormUsuarios properties
-            this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
-            this.ClientSize = new System.Drawing.Size(1000, 640);
-            this.Controls.Add(this.mainPadding);
-            this.Controls.Add(this.headerPanel);
-            this.Controls.Add(this.statusStrip);
-            this.MinimumSize = new System.Drawing.Size(960, 520);
-            this.Name = "FormUsuarios";
-            this.StartPosition = System.Windows.Forms.FormStartPosition.CenterParent;
-            this.Text = "Usuarios";
-
-            // complete layout
-            this.headerPanel.ResumeLayout(false);
-            this.headerPanel.PerformLayout();
-            this.searchContainer.ResumeLayout(false);
-            this.searchContainer.PerformLayout();
-            ((System.ComponentModel.ISupportInitialize)(this.picSearch)).EndInit();
-            this.actionFlow.ResumeLayout(false);
-            this.mainPadding.ResumeLayout(false);
-            this.cardPanel.ResumeLayout(false);
-            ((System.ComponentModel.ISupportInitialize)(this.dgvUsuarios)).EndInit();
-            this.emptyPanel.ResumeLayout(false);
-            this.emptyPanel.PerformLayout();
-            this.statusStrip.ResumeLayout(false);
-            this.statusStrip.PerformLayout();
-            this.ctxMenu.ResumeLayout(false);
-            this.ResumeLayout(false);
-            this.PerformLayout();
+            // 
+            ctxMenu.ImageScalingSize = new Size(18, 18);
+            ctxMenu.Items.AddRange(new ToolStripItem[] { ctxMenuNuevo, ctxMenuEditar, ctxMenuEliminar });
+            ctxMenu.Name = "ctxMenu";
+            ctxMenu.Size = new Size(118, 70);
+            // 
+            // ctxMenuNuevo
+            // 
+            ctxMenuNuevo.Name = "ctxMenuNuevo";
+            ctxMenuNuevo.Size = new Size(117, 22);
+            ctxMenuNuevo.Text = "Nuevo";
+            // 
+            // ctxMenuEditar
+            // 
+            ctxMenuEditar.Name = "ctxMenuEditar";
+            ctxMenuEditar.Size = new Size(117, 22);
+            ctxMenuEditar.Text = "Editar";
+            // 
+            // ctxMenuEliminar
+            // 
+            ctxMenuEliminar.Name = "ctxMenuEliminar";
+            ctxMenuEliminar.Size = new Size(117, 22);
+            ctxMenuEliminar.Text = "Eliminar";
+            // 
+            // emptyPanel
+            // 
+            emptyPanel.BackColor = Color.Transparent;
+            emptyPanel.Controls.Add(lblEmptyTitle);
+            emptyPanel.Controls.Add(lblEmptyDesc);
+            emptyPanel.Controls.Add(btnEmptyNew);
+            emptyPanel.Dock = DockStyle.Fill;
+            emptyPanel.Location = new Point(14, 14);
+            emptyPanel.Name = "emptyPanel";
+            emptyPanel.Size = new Size(930, 452);
+            emptyPanel.TabIndex = 1;
+            emptyPanel.Visible = false;
+            // 
+            // lblEmptyTitle
+            // 
+            lblEmptyTitle.AutoSize = true;
+            lblEmptyTitle.Font = new Font("Segoe UI", 14F, FontStyle.Bold);
+            lblEmptyTitle.ForeColor = Color.FromArgb(54, 62, 71);
+            lblEmptyTitle.Location = new Point(40, 80);
+            lblEmptyTitle.Name = "lblEmptyTitle";
+            lblEmptyTitle.Size = new Size(155, 25);
+            lblEmptyTitle.TabIndex = 0;
+            lblEmptyTitle.Text = "No hay usuarios";
+            // 
+            // lblEmptyDesc
+            // 
+            lblEmptyDesc.AutoSize = true;
+            lblEmptyDesc.Font = new Font("Segoe UI", 10F);
+            lblEmptyDesc.ForeColor = Color.Gray;
+            lblEmptyDesc.Location = new Point(40, 120);
+            lblEmptyDesc.MaximumSize = new Size(520, 0);
+            lblEmptyDesc.Name = "lblEmptyDesc";
+            lblEmptyDesc.Size = new Size(519, 38);
+            lblEmptyDesc.TabIndex = 1;
+            lblEmptyDesc.Text = "Aún no hay registros. Usa el botón \"Nuevo\" para crear tu primer usuario o importa usuarios desde un archivo.";
+            // 
+            // btnEmptyNew
+            // 
+            btnEmptyNew.BackColor = Color.FromArgb(0, 123, 255);
+            btnEmptyNew.FlatStyle = FlatStyle.Flat;
+            btnEmptyNew.ForeColor = Color.White;
+            btnEmptyNew.Location = new Point(40, 170);
+            btnEmptyNew.Name = "btnEmptyNew";
+            btnEmptyNew.Size = new Size(140, 36);
+            btnEmptyNew.TabIndex = 2;
+            btnEmptyNew.Text = "Nuevo usuario";
+            btnEmptyNew.UseVisualStyleBackColor = true;
+            // 
+            // statusStrip
+            // 
+            statusStrip.BackColor = Color.WhiteSmoke;
+            statusStrip.Items.AddRange(new ToolStripItem[] { lblInfo, toolProgress });
+            statusStrip.Location = new Point(0, 618);
+            statusStrip.Name = "statusStrip";
+            statusStrip.Size = new Size(1000, 22);
+            statusStrip.TabIndex = 3;
+            // 
+            // lblInfo
+            // 
+            lblInfo.Name = "lblInfo";
+            lblInfo.Size = new Size(32, 17);
+            lblInfo.Text = "Listo";
+            // 
+            // toolProgress
+            // 
+            toolProgress.Name = "toolProgress";
+            toolProgress.Size = new Size(120, 16);
+            toolProgress.Style = ProgressBarStyle.Marquee;
+            toolProgress.Visible = false;
+            // 
+            // toolTip
+            // 
+            toolTip.AutoPopDelay = 5000;
+            toolTip.InitialDelay = 600;
+            toolTip.ReshowDelay = 120;
+            // 
+            // FormUsuarios
+            // 
+            AutoScaleDimensions = new SizeF(7F, 15F);
+            AutoScaleMode = AutoScaleMode.Font;
+            ClientSize = new Size(1000, 640);
+            Controls.Add(mainPadding);
+            Controls.Add(headerPanel);
+            Controls.Add(statusStrip);
+            MinimumSize = new Size(960, 520);
+            Name = "FormUsuarios";
+            StartPosition = FormStartPosition.CenterParent;
+            Text = "Usuarios";
+            headerPanel.ResumeLayout(false);
+            headerPanel.PerformLayout();
+            actionFlow.ResumeLayout(false);
+            searchContainer.ResumeLayout(false);
+            searchContainer.PerformLayout();
+            ((System.ComponentModel.ISupportInitialize)picSearch).EndInit();
+            mainPadding.ResumeLayout(false);
+            cardPanel.ResumeLayout(false);
+            ((System.ComponentModel.ISupportInitialize)dgvUsuarios).EndInit();
+            ctxMenu.ResumeLayout(false);
+            emptyPanel.ResumeLayout(false);
+            emptyPanel.PerformLayout();
+            statusStrip.ResumeLayout(false);
+            statusStrip.PerformLayout();
+            ResumeLayout(false);
+            PerformLayout();
         }
         #endregion
 
@@ -386,6 +424,8 @@
         private System.Windows.Forms.Button btnNuevo;
         private System.Windows.Forms.Button btnEditar;
         private System.Windows.Forms.Button btnEliminar;
+        private System.Windows.Forms.Button btnDetalle;
+        private System.Windows.Forms.Button btnEditarForm;
 
         private System.Windows.Forms.Panel mainPadding;
         private System.Windows.Forms.Panel cardPanel;

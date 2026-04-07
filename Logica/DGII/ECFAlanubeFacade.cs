@@ -1,29 +1,19 @@
-﻿using Andloe.Entidad;
+﻿using Andloe.Data.Fiscal;
 
 namespace Andloe.Logica.DGII
 {
     public sealed class ECFAlanubeFacade
     {
-        private readonly ECFAlanubeService _alanubeService;
+        private readonly ECFAlanubeService _service = new();
 
-        public ECFAlanubeFacade()
+        public AlanubeEmitResponseDto EnviarFactura(int facturaId, string? usuario = null)
         {
-            _alanubeService = new ECFAlanubeService();
-        }
-
-        public AlanubeEmitResponseDto EnviarFactura(int facturaId)
-        {
-            return _alanubeService.EnviarFactura(facturaId);
+            return _service.EnviarFactura(facturaId, usuario);
         }
 
         public AlanubeStatusResponseDto ConsultarFactura(int facturaId)
         {
-            return _alanubeService.ConsultarFactura(facturaId);
-        }
-
-        public string GenerarPayloadJson(int facturaId)
-        {
-            return _alanubeService.GenerarPayloadJson(facturaId);
+            return _service.ConsultarFactura(facturaId);
         }
     }
 }

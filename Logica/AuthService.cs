@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Linq;
 using System.Security.Cryptography;
 using System.Text;
 using Andloe.Data;
@@ -18,7 +19,7 @@ namespace Andloe.Logica
 
             var u = _repo.ObtenerPorUsuario(usuario);
             if (u is null)
-                return Fail("Usuario o contraseña inválidos.");
+                return Fail("No fue posible iniciar sesión con este usuario.");
 
             if (!string.Equals(u.Estado, "Activo", StringComparison.OrdinalIgnoreCase))
                 return Fail($"Usuario en estado '{u.Estado}'.");
@@ -34,7 +35,6 @@ namespace Andloe.Logica
             Buffer.BlockCopy(u.Salt, 0, toHash, 0, u.Salt.Length);
             Buffer.BlockCopy(passBytes, 0, toHash, u.Salt.Length, passBytes.Length);
 
-            // ✅ recomendado (evita warning)
             var hash = SHA256.HashData(toHash);
 
             if (!FixedTimeEquals(hash, u.HashPassword))
@@ -57,7 +57,11 @@ namespace Andloe.Logica
 
             _repo.RegistrarAccesoExitoso(u.UsuarioId);
 
-            var roles = _repo.ObtenerRoles(u.UsuarioId);
+            var roles = _repo.ObtenerRoles(u.UsuarioId)
+                .Select(r => r.Nombre)
+                .Where(n => !string.IsNullOrWhiteSpace(n))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
 
             u.HashPassword = Array.Empty<byte>();
             u.Salt = Array.Empty<byte>();
@@ -75,10 +79,13 @@ namespace Andloe.Logica
 
         private static bool FixedTimeEquals(byte[] a, byte[] b)
         {
-            if (a is null || b is null || a.Length != b.Length) return false;
+            if (a is null || b is null || a.Length != b.Length)
+                return false;
+
             var diff = 0;
             for (int i = 0; i < a.Length; i++)
                 diff |= a[i] ^ b[i];
+
             return diff == 0;
         }
     }

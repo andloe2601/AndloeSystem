@@ -1,13 +1,13 @@
 ﻿using Andloe.Data;
 using Andloe.Data.DGII;
 using Andloe.Data.Fiscal;
-using Andloe.Entidad;
 using Microsoft.Data.SqlClient;
 using System;
 using System.Collections.Generic;
 using System.Data;
 using System.Linq;
 using System.Text.Json;
+
 
 namespace Andloe.Logica.DGII
 {
@@ -38,7 +38,8 @@ namespace Andloe.Logica.DGII
             return JsonSerializer.Serialize(request, new JsonSerializerOptions
             {
                 PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-                WriteIndented = false
+                WriteIndented = false,
+                DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull
             });
         }
 
@@ -51,7 +52,7 @@ namespace Andloe.Logica.DGII
             var cab = CargarCabecera(facturaId)
                       ?? throw new InvalidOperationException("No se encontró cabecera fiscal.");
 
-            var tipoReal = ResolverTipoEcfReal(cab.ENCF);
+            var tipoReal = ResolverTipoEcfReal(cab.Encf);
 
             try
             {
@@ -102,7 +103,7 @@ namespace Andloe.Logica.DGII
             var cab = CargarCabecera(facturaId)
                       ?? throw new InvalidOperationException("No se encontró cabecera fiscal.");
 
-            var tipoReal = ResolverTipoEcfReal(cab.ENCF);
+            var tipoReal = ResolverTipoEcfReal(cab.Encf);
 
             var trackId = Limpia(_ecfDocumentoRepository.ObtenerTrackId(facturaId));
             if (string.IsNullOrWhiteSpace(trackId))
@@ -138,7 +139,7 @@ namespace Andloe.Logica.DGII
             EcfFacturaCabeceraRow cab,
             IReadOnlyCollection<EcfFacturaDetalleRow> det)
         {
-            var tipoReal = ResolverTipoEcfReal(cab.ENCF);
+            var tipoReal = ResolverTipoEcfReal(cab.Encf);
 
             if (tipoReal is not 31 and not 32)
                 throw new InvalidOperationException($"Alanube Sandbox solo está preparado para 31 y 32. Tipo real: {tipoReal}");
@@ -163,60 +164,172 @@ namespace Andloe.Logica.DGII
         }
 
         private static AlanubeInvoiceRequestDto MapToAlanubeRequest(
-            EcfFacturaCabeceraRow cab,
-            IReadOnlyCollection<EcfFacturaDetalleRow> det)
+    EcfFacturaCabeceraRow cab,
+    IReadOnlyCollection<EcfFacturaDetalleRow> det)
         {
-            var tipoReal = ResolverTipoEcfReal(cab.ENCF);
+            var tipoReal = ResolverTipoEcfReal(cab.Encf);
+
+            var paymentType = ResolverPaymentType(cab);
+            var totalGravado = Round2(cab.MontoGravadoTotal ?? 0m);
+            var totalExento = Round2(cab.MontoExentoTotal ?? 0m);
+            var totalItbis = Round2(cab.TotalImpuesto ?? 0m);
+            var totalDescuento = Round2(cab.TotalDescuento ?? 0m);
+            var totalGeneral = Round2(cab.TotalGeneral ?? 0m);
 
             return new AlanubeInvoiceRequestDto
             {
-                DocumentType = tipoReal == 31 ? "fiscal" : "consumer",
-                ENcf = cab.ENCF,
-                IssueDate = cab.FechaDocumento,
-
-                Issuer = new AlanubePartyDto
+                IdDoc = new AlanubeIdDocDto
                 {
-                    TaxId = Limpia(cab.EmisorRnc),
-                    Name = Limpia(cab.EmisorNombre),
-                    Email = Limpia(cab.EmisorEmail),
-                    Address = Limpia(cab.EmisorDireccion)
+                    Encf = Requerido(cab.Encf, "eNCF"),
+                    DocumentType = tipoReal,
+                    IncomeType = cab.TipoIngresoId ?? 1,
+                    PaymentType = paymentType,
+                    PaymentDeadline = paymentType == 2 && cab.FechaLimitePago.HasValue
+        ? cab.FechaLimitePago.Value.ToString("yyyy-MM-dd")
+        : null,
+                    PaymentFormsTable = paymentType == 1
+        ? new List<AlanubePaymentFormDto>
+        {
+            new()
+            {
+                PaymentMethod = 1,
+                PaymentAmount = totalGeneral
+            }
+        }
+        : new List<AlanubePaymentFormDto>()
                 },
 
+                // 🔥 EMISOR DESDE CONFIG
+                Sender = new AlanubePartyDto
+                {
+                    Rnc = Requerido(cab.EmisorRnc, "RNC emisor"),
+                    CompanyName = Requerido(cab.EmisorNombre, "Nombre emisor"),
+                    Email = NullIfWhite(cab.EmisorCorreoFiscal ?? cab.EmisorEmail),
+                    Address = Requerido(cab.EmisorDireccionFiscal ?? cab.EmisorDireccion, "Dirección emisor"),
+                    Province = Requerido(NormalizarCodigoFiscal6(cab.EmisorProvinciaCodigo), "Provincia código emisor"),
+                    Municipality = Requerido(NormalizarCodigoFiscal6(cab.EmisorMunicipioCodigo), "Municipio código emisor"),
+                    StampDate = DateTime.Today.ToString("yyyy-MM-dd")
+                },
+
+                // 🔥 COMPRADOR DESDE SNAPSHOT + CLIENTE
                 Buyer = new AlanubePartyDto
                 {
-                    TaxId = Limpia(cab.RncCompradorSnapshot ?? cab.DocumentoCliente),
-                    Name = Limpia(cab.RazonSocialCompradorSnapshot ?? cab.NombreCliente),
-                    Email = Limpia(cab.CorreoCompradorSnapshot),
-                    Address = Limpia(cab.DireccionCompradorSnapshot ?? cab.DireccionCliente)
+                    Rnc = NullIfWhite(
+        cab.RncCompradorSnapshot
+        ?? cab.DocumentoCliente
+        ?? cab.ClienteRncCedula),
+
+                    CompanyName = Requerido(
+        cab.RazonSocialCompradorSnapshot
+        ?? cab.ClienteRazonSocialFiscal
+        ?? cab.NombreCliente
+        ?? cab.ClienteNombre,
+        "Nombre comprador"),
+
+                    Email = NullIfWhite(
+        cab.CorreoCompradorSnapshot
+        ?? cab.ClienteCorreoFiscal
+        ?? cab.ClienteEmail),
+
+                    Address = NullIfWhite(
+        cab.DireccionCompradorSnapshot
+        ?? cab.DireccionCliente
+        ?? cab.ClienteDireccion) ?? "N/A",
+
+                    Province = NormalizarCodigoFiscal6(
+    cab.ProvinciaCompradorSnapshot
+    ?? cab.ClienteProvinciaCodigo
+    ?? cab.EmisorProvinciaCodigo),
+
+                    Municipality = NormalizarCodigoFiscal6(
+    cab.MunicipioCompradorSnapshot
+    ?? cab.ClienteMunicipioCodigo
+    ?? cab.EmisorMunicipioCodigo)
                 },
 
-                IncomeType = cab.TipoIngresoId?.ToString(),
-                PaymentType = cab.TipoPagoECFId?.ToString(),
-                Notes = Limpia(cab.Observacion),
+                Totals = new AlanubeTotalsDto
+                {
+                    TotalTaxedAmount = totalGravado,
+                    TotalExemptAmount = totalExento,
+                    TotalItbis = totalItbis,
+                    TotalDiscount = totalDescuento,
+                    TotalAmount = totalGeneral,
+                    ItbisS1 = totalItbis > 0m ? 18m : 0m,
+                    Itbis1Total = totalItbis
+                },
 
-                TaxedAmount = cab.MontoGravadoTotal ?? 0m,
-                ExemptAmount = cab.MontoExentoTotal ?? 0m,
-                TaxAmount = cab.TotalImpuesto ?? 0m,
-                DiscountAmount = cab.TotalDescuento ?? 0m,
-                TotalAmount = cab.TotalGeneral ?? 0m,
-
-                Items = det
+                ItemDetails = det
                     .OrderBy(x => x.NumeroLineaECF ?? x.FacturaDetId)
-                    .Select((x, i) => new AlanubeInvoiceItemDto
+                    .Select((x, i) =>
                     {
-                        LineNumber = x.NumeroLineaECF ?? (i + 1),
-                        Code = Limpia(x.CodigoItemFiscal ?? x.CodigoProducto ?? x.ProductoCodigo),
-                        Description = Limpia(x.DescripcionFiscal ?? x.Descripcion) ?? "ITEM",
-                        UnitCode = Limpia(x.UnidadMedidaDGII ?? x.Unidad),
-                        Quantity = x.Cantidad,
-                        UnitPrice = x.PrecioUnitario,
-                        TaxedAmount = x.MontoGravado ?? 0m,
-                        ExemptAmount = x.MontoExento ?? 0m,
-                        TaxAmount = x.ItbisMonto ?? 0m,
-                        DiscountAmount = x.DescuentoMonto ?? 0m
+                        var itemAmount = Round2((x.MontoGravado ?? 0m) + (x.MontoExento ?? 0m));
+                        if (itemAmount <= 0m)
+                            itemAmount = Round2(x.Cantidad * x.PrecioUnitario);
+
+                        return new AlanubeItemDetailDto
+                        {
+                            LineNumber = x.NumeroLineaECF ?? (i + 1),
+                            BillingIndicator = 1,
+                            ItemName = Requerido(x.DescripcionFiscal ?? x.Descripcion ?? x.ProductoCodigo, $"Nombre item línea {i + 1}"),
+                            GoodServiceIndicator = 1,
+                            ItemDescription = Requerido(x.DescripcionFiscal ?? x.Descripcion ?? x.ProductoCodigo, $"Descripción item línea {i + 1}"),
+                            QuantityItem = x.Cantidad <= 0m ? 1m : Round2(x.Cantidad),
+                            UnitMeasure = ParseUnidadMedida(x.UnidadMedidaDGII),
+                            UnitPriceItem = Round2(x.PrecioUnitario),
+                            ItemAmount = itemAmount
+                        };
                     })
                     .ToList()
             };
+        }
+
+        private static string? NullIfWhite(string? value)
+        {
+            return string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+        }
+
+        private static string Requerido(string? value, string campo)
+        {
+            var v = NullIfWhite(value);
+            if (v == null)
+                throw new InvalidOperationException($"Falta el campo requerido para Alanube: {campo}.");
+            return v;
+        }
+
+        private static decimal Round2(decimal value)
+        {
+            return Math.Round(value, 2, MidpointRounding.AwayFromZero);
+        }
+
+        private static int ParseUnidadMedida(string? unidadMedidaDgii)
+        {
+            return int.TryParse((unidadMedidaDgii ?? "").Trim(), out var um) && um > 0
+                ? um
+                : 43;
+        }
+                
+
+        private static int ResolverPaymentType(EcfFacturaCabeceraRow cab)
+        {
+            if (cab.TipoPagoECFHeader.HasValue && cab.TipoPagoECFHeader.Value > 0)
+                return cab.TipoPagoECFHeader.Value;
+
+            if (cab.TipoPagoECFId.HasValue && cab.TipoPagoECFId.Value > 0)
+                return cab.TipoPagoECFId.Value;
+
+            return 1;
+        }
+
+        private static string? NormalizarCodigoFiscal6(string? value)
+        {
+            var v = NullIfWhite(value);
+            if (v == null) return null;
+
+            v = new string(v.Where(char.IsDigit).ToArray());
+
+            if (v.Length == 0) return null;
+
+            return v.PadLeft(6, '0');
         }
 
         private static int ResolverTipoEcfReal(string? encf)
@@ -256,23 +369,55 @@ SELECT TOP(1)
     fc.NombreCliente,
     fc.DocumentoCliente,
     fc.DireccionCliente,
+
     fc.RncCompradorSnapshot,
     fc.RazonSocialCompradorSnapshot,
     fc.CorreoCompradorSnapshot,
     fc.DireccionCompradorSnapshot,
+    fc.MunicipioCompradorSnapshot,
+    fc.ProvinciaCompradorSnapshot,
+
+    fc.TipoPagoECFHeader,
+    fc.FechaLimitePago,
+
     fc.TotalDescuento,
     fc.TotalImpuesto,
     fc.TotalGeneral,
     fc.MontoGravadoTotal,
     fc.MontoExentoTotal,
     fc.Observacion,
+
     e.RazonSocial AS EmisorNombre,
     e.RNC AS EmisorRnc,
     e.Email AS EmisorEmail,
-    e.Direccion AS EmisorDireccion
+    e.Direccion AS EmisorDireccion,
+
+    sc.CodigoSucursalFiscal,
+    sc.NombreSucursalFiscal,
+    sc.DireccionFiscal,
+    sc.MunicipioCodigo AS EmisorMunicipioCodigo,
+    sc.ProvinciaCodigo AS EmisorProvinciaCodigo,
+    sc.CorreoFiscal AS EmisorCorreoFiscal,
+    sc.MunicipioNombre AS EmisorMunicipioNombre,
+    sc.ProvinciaNombre AS EmisorProvinciaNombre,
+
+    c.RNC_Cedula,
+    c.RazonSocialFiscal,
+    c.Nombre,
+    c.CorreoFiscal AS ClienteCorreoFiscal,
+    c.Email AS ClienteEmail,
+    c.Direccion AS ClienteDireccion,
+    c.MunicipioCodigo AS ClienteMunicipioCodigo,
+    c.ProvinciaCodigo AS ClienteProvinciaCodigo
+
 FROM dbo.vw_ECFFacturaCabecera fc
 LEFT JOIN dbo.Empresa e
     ON e.EmpresaId = fc.EmpresaId
+LEFT JOIN dbo.ECFSucursalConfig sc
+    ON sc.SucursalId = fc.SucursalId
+   AND sc.Activo = 1
+LEFT JOIN dbo.Cliente c
+    ON c.ClienteId = fc.ClienteId
 WHERE fc.FacturaId = @FacturaId;", cn);
 
             cmd.Parameters.Add("@FacturaId", SqlDbType.Int).Value = facturaId;
@@ -290,24 +435,50 @@ WHERE fc.FacturaId = @FacturaId;", cn);
                 TipoIngresoId = rd["TipoIngresoId"] == DBNull.Value ? null : Convert.ToInt32(rd["TipoIngresoId"]),
                 TipoPagoECFId = rd["TipoPagoECFId"] == DBNull.Value ? null : Convert.ToInt32(rd["TipoPagoECFId"]),
                 FechaDocumento = Convert.ToDateTime(rd["FechaDocumento"]),
-                ENCF = rd["eNCF"] == DBNull.Value ? null : Convert.ToString(rd["eNCF"]),
+                Encf = rd["eNCF"] == DBNull.Value ? null : Convert.ToString(rd["eNCF"]),
+
                 NombreCliente = rd["NombreCliente"] == DBNull.Value ? null : Convert.ToString(rd["NombreCliente"]),
                 DocumentoCliente = rd["DocumentoCliente"] == DBNull.Value ? null : Convert.ToString(rd["DocumentoCliente"]),
                 DireccionCliente = rd["DireccionCliente"] == DBNull.Value ? null : Convert.ToString(rd["DireccionCliente"]),
+
                 RncCompradorSnapshot = rd["RncCompradorSnapshot"] == DBNull.Value ? null : Convert.ToString(rd["RncCompradorSnapshot"]),
                 RazonSocialCompradorSnapshot = rd["RazonSocialCompradorSnapshot"] == DBNull.Value ? null : Convert.ToString(rd["RazonSocialCompradorSnapshot"]),
                 CorreoCompradorSnapshot = rd["CorreoCompradorSnapshot"] == DBNull.Value ? null : Convert.ToString(rd["CorreoCompradorSnapshot"]),
                 DireccionCompradorSnapshot = rd["DireccionCompradorSnapshot"] == DBNull.Value ? null : Convert.ToString(rd["DireccionCompradorSnapshot"]),
+                MunicipioCompradorSnapshot = rd["MunicipioCompradorSnapshot"] == DBNull.Value ? null : Convert.ToString(rd["MunicipioCompradorSnapshot"]),
+                ProvinciaCompradorSnapshot = rd["ProvinciaCompradorSnapshot"] == DBNull.Value ? null : Convert.ToString(rd["ProvinciaCompradorSnapshot"]),
+                TipoPagoECFHeader = rd["TipoPagoECFHeader"] == DBNull.Value ? null : Convert.ToInt32(rd["TipoPagoECFHeader"]),
+                FechaLimitePago = rd["FechaLimitePago"] == DBNull.Value ? null : Convert.ToDateTime(rd["FechaLimitePago"]),
+
                 TotalDescuento = rd["TotalDescuento"] == DBNull.Value ? null : Convert.ToDecimal(rd["TotalDescuento"]),
                 TotalImpuesto = rd["TotalImpuesto"] == DBNull.Value ? null : Convert.ToDecimal(rd["TotalImpuesto"]),
                 TotalGeneral = rd["TotalGeneral"] == DBNull.Value ? null : Convert.ToDecimal(rd["TotalGeneral"]),
                 MontoGravadoTotal = rd["MontoGravadoTotal"] == DBNull.Value ? null : Convert.ToDecimal(rd["MontoGravadoTotal"]),
                 MontoExentoTotal = rd["MontoExentoTotal"] == DBNull.Value ? null : Convert.ToDecimal(rd["MontoExentoTotal"]),
                 Observacion = rd["Observacion"] == DBNull.Value ? null : Convert.ToString(rd["Observacion"]),
+
                 EmisorNombre = rd["EmisorNombre"] == DBNull.Value ? null : Convert.ToString(rd["EmisorNombre"]),
                 EmisorRnc = rd["EmisorRnc"] == DBNull.Value ? null : Convert.ToString(rd["EmisorRnc"]),
                 EmisorEmail = rd["EmisorEmail"] == DBNull.Value ? null : Convert.ToString(rd["EmisorEmail"]),
-                EmisorDireccion = rd["EmisorDireccion"] == DBNull.Value ? null : Convert.ToString(rd["EmisorDireccion"])
+                EmisorDireccion = rd["EmisorDireccion"] == DBNull.Value ? null : Convert.ToString(rd["EmisorDireccion"]),
+
+                EmisorCodigoSucursalFiscal = rd["CodigoSucursalFiscal"] == DBNull.Value ? null : Convert.ToString(rd["CodigoSucursalFiscal"]),
+                EmisorNombreSucursalFiscal = rd["NombreSucursalFiscal"] == DBNull.Value ? null : Convert.ToString(rd["NombreSucursalFiscal"]),
+                EmisorDireccionFiscal = rd["DireccionFiscal"] == DBNull.Value ? null : Convert.ToString(rd["DireccionFiscal"]),
+                EmisorMunicipioCodigo = rd["EmisorMunicipioCodigo"] == DBNull.Value ? null : Convert.ToString(rd["EmisorMunicipioCodigo"]),
+                EmisorProvinciaCodigo = rd["EmisorProvinciaCodigo"] == DBNull.Value ? null : Convert.ToString(rd["EmisorProvinciaCodigo"]),
+                EmisorCorreoFiscal = rd["EmisorCorreoFiscal"] == DBNull.Value ? null : Convert.ToString(rd["EmisorCorreoFiscal"]),
+                EmisorMunicipioNombre = rd["EmisorMunicipioNombre"] == DBNull.Value ? null : Convert.ToString(rd["EmisorMunicipioNombre"]),
+                EmisorProvinciaNombre = rd["EmisorProvinciaNombre"] == DBNull.Value ? null : Convert.ToString(rd["EmisorProvinciaNombre"]),
+
+                ClienteRncCedula = rd["RNC_Cedula"] == DBNull.Value ? null : Convert.ToString(rd["RNC_Cedula"]),
+                ClienteRazonSocialFiscal = rd["RazonSocialFiscal"] == DBNull.Value ? null : Convert.ToString(rd["RazonSocialFiscal"]),
+                ClienteNombre = rd["Nombre"] == DBNull.Value ? null : Convert.ToString(rd["Nombre"]),
+                ClienteCorreoFiscal = rd["ClienteCorreoFiscal"] == DBNull.Value ? null : Convert.ToString(rd["ClienteCorreoFiscal"]),
+                ClienteEmail = rd["ClienteEmail"] == DBNull.Value ? null : Convert.ToString(rd["ClienteEmail"]),
+                ClienteDireccion = rd["ClienteDireccion"] == DBNull.Value ? null : Convert.ToString(rd["ClienteDireccion"]),
+                ClienteMunicipioCodigo = rd["ClienteMunicipioCodigo"] == DBNull.Value ? null : Convert.ToString(rd["ClienteMunicipioCodigo"]),
+                ClienteProvinciaCodigo = rd["ClienteProvinciaCodigo"] == DBNull.Value ? null : Convert.ToString(rd["ClienteProvinciaCodigo"]),
             };
         }
 
@@ -377,7 +548,7 @@ ORDER BY ISNULL(NumeroLineaECF, 999999), FacturaDetId;", cn);
             public int? TipoIngresoId { get; set; }
             public int? TipoPagoECFId { get; set; }
             public DateTime FechaDocumento { get; set; }
-            public string? ENCF { get; set; }
+            public string? Encf { get; set; }
 
             public string? NombreCliente { get; set; }
             public string? DocumentoCliente { get; set; }
@@ -387,6 +558,10 @@ ORDER BY ISNULL(NumeroLineaECF, 999999), FacturaDetId;", cn);
             public string? RazonSocialCompradorSnapshot { get; set; }
             public string? CorreoCompradorSnapshot { get; set; }
             public string? DireccionCompradorSnapshot { get; set; }
+            public string? MunicipioCompradorSnapshot { get; set; }
+            public string? ProvinciaCompradorSnapshot { get; set; }
+            public int? TipoPagoECFHeader { get; set; }
+            public DateTime? FechaLimitePago { get; set; }
 
             public decimal? TotalDescuento { get; set; }
             public decimal? TotalImpuesto { get; set; }
@@ -400,6 +575,25 @@ ORDER BY ISNULL(NumeroLineaECF, 999999), FacturaDetId;", cn);
             public string? EmisorRnc { get; set; }
             public string? EmisorEmail { get; set; }
             public string? EmisorDireccion { get; set; }
+            public string? EmisorMunicipio { get; set; }
+            public string? EmisorProvincia { get; set; }
+            public string? EmisorCodigoSucursalFiscal { get; set; }
+            public string? EmisorNombreSucursalFiscal { get; set; }
+            public string? EmisorDireccionFiscal { get; set; }
+            public string? EmisorMunicipioCodigo { get; set; }
+            public string? EmisorProvinciaCodigo { get; set; }
+            public string? EmisorCorreoFiscal { get; set; }
+            public string? EmisorMunicipioNombre { get; set; }
+            public string? EmisorProvinciaNombre { get; set; }
+
+            public string? ClienteRncCedula { get; set; }
+            public string? ClienteRazonSocialFiscal { get; set; }
+            public string? ClienteNombre { get; set; }
+            public string? ClienteCorreoFiscal { get; set; }
+            public string? ClienteEmail { get; set; }
+            public string? ClienteDireccion { get; set; }
+            public string? ClienteMunicipioCodigo { get; set; }
+            public string? ClienteProvinciaCodigo { get; set; }
         }
 
         private sealed class EcfFacturaDetalleRow

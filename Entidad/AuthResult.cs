@@ -7,6 +7,8 @@ namespace Andloe.Entidad
         public bool Exitoso { get; set; }
         public string Mensaje { get; set; } = "";
         public Usuario? Usuario { get; set; }
-        public List<Rol> Roles { get; set; } = new();
+
+        // Para autorización/UI necesitamos nombres de roles
+        public List<string> Roles { get; set; } = new();
     }
 }

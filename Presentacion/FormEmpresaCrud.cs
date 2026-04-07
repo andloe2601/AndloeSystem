@@ -23,6 +23,9 @@ namespace Andloe.Presentacion
         {
             InitializeComponent();
 
+            AcceptButton = btnGuardar;
+            CancelButton = btnCerrar;
+
             Load += FormEmpresaCrud_Load;
             dgvEmpresas.SelectionChanged += dgvEmpresas_SelectionChanged;
             cbProvincia.SelectedIndexChanged += cbProvincia_SelectedIndexChanged;
@@ -103,6 +106,7 @@ namespace Andloe.Presentacion
 
         private void dgvEmpresas_SelectionChanged(object? sender, EventArgs e)
         {
+            if (_loading) return;
             if (dgvEmpresas.CurrentRow == null) return;
             if (dgvEmpresas.CurrentRow.Cells["colEmpresaId"].Value == null) return;
 

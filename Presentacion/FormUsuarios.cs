@@ -1,289 +1,198 @@
 ﻿using System;
-using System.ComponentModel;
-using System.Drawing;
-using System.Threading;
-using System.Threading.Tasks;
 using System.Windows.Forms;
-using Andloe.Data;
-using Andloe.Entidad;
 using Andloe.Logica;
+using Andloe.Entidad;
 
 namespace Andloe.Presentacion
 {
     public partial class FormUsuarios : Form
     {
         private readonly AuthorizationService _auth;
-        private readonly UsuarioRepository _repo = new();
         private readonly UsuarioService _svc = new();
 
-        private readonly BindingSource _binding = new();
-        private CancellationTokenSource? _loadCts;
+        private int? _usuarioIdSeleccionado = null;
 
         public FormUsuarios(AuthorizationService auth)
         {
-            _auth = auth ?? throw new ArgumentNullException(nameof(auth));
             InitializeComponent();
+            _auth = auth;
 
-            // UI tweaks and event hookups
-            DoubleBuffered = true;
-            SetupGridStyle();
+            ConfigurarPermisos();
             WireEvents();
-            ApplyPermissions();
-
-            // Bind the grid to the BindingSource
-            dgvUsuarios.DataSource = _binding;
-
-            // react to data changes to show/hide the empty panel
-            _binding.ListChanged += Binding_ListChanged;
+            CargarUsuarios();
         }
 
-        // Designer fallback
-        public FormUsuarios() : this(new AuthorizationService(Array.Empty<string>())) { }
-
-        private void SetupGridStyle()
+        private void ConfigurarPermisos()
         {
-            // Set selection colors safely
-            var sel = new DataGridViewCellStyle
-            {
-                SelectionBackColor = Color.FromArgb(0, 120, 215),
-                SelectionForeColor = Color.White
-            };
-            dgvUsuarios.DefaultCellStyle.SelectionBackColor = sel.SelectionBackColor;
-            dgvUsuarios.DefaultCellStyle.SelectionForeColor = sel.SelectionForeColor;
+            bool canEdit = _auth.Can(Permisos.EditUsuarios);
 
-            // Make header visually prominent
-            dgvUsuarios.EnableHeadersVisualStyles = false;
+            btnNuevo.Enabled = canEdit;
+            btnEditar.Enabled = canEdit;
+            btnEliminar.Enabled = canEdit;
+            btnEditarForm.Enabled = canEdit;
 
-            // Optional: better row height and font
-            dgvUsuarios.RowTemplate.Height = 30;
-            dgvUsuarios.Font = new Font("Segoe UI", 9F);
+            btnDetalle.Enabled = true;
+
+            ctxMenuNuevo.Enabled = canEdit;
+            ctxMenuEditar.Enabled = canEdit;
+            ctxMenuEliminar.Enabled = canEdit;
         }
 
         private void WireEvents()
         {
-            // header paint for gradient (modern look)
-            headerPanel.Paint += HeaderPanel_Paint;
+            dgvUsuarios.SelectionChanged += (_, __) => Seleccionar();
 
-            // Search actions
-            txtBuscar.KeyDown += TxtBuscar_KeyDown;
-            btnLimpiarBusqueda.Click += (_, __) => { txtBuscar.Clear(); _ = CargarAsync(); };
-            btnRefrescar.Click += async (_, __) => await CargarAsync(txtBuscar.Text.Trim());
-            btnNuevo.Click += (_, __) => NewUsuario();
-            btnEditar.Click += (_, __) => EditSelectedUsuario();
-            btnEliminar.Click += async (_, __) => await DeleteSelectedUsuarioAsync();
+            btnRefrescar.Click += (_, __) => CargarUsuarios();
+            btnNuevo.Click += (_, __) => Nuevo();
+            btnEditar.Click += (_, __) => Editar();
+            btnEliminar.Click += (_, __) => Eliminar();
 
-            // context menu
-            ctxMenuNuevo.Click += (_, __) => NewUsuario();
-            ctxMenuEditar.Click += (_, __) => EditSelectedUsuario();
-            ctxMenuEliminar.Click += async (_, __) => await DeleteSelectedUsuarioAsync();
+            btnDetalle.Click += (_, __) => AbrirDetalle();
+            btnEditarForm.Click += (_, __) => AbrirEditarForm();
 
-            // grid interactions
-            dgvUsuarios.CellDoubleClick += (s, e) =>
+            btnEmptyNew.Click += (_, __) => Nuevo();
+
+            ctxMenuNuevo.Click += (_, __) => Nuevo();
+            ctxMenuEditar.Click += (_, __) => Editar();
+            ctxMenuEliminar.Click += (_, __) => Eliminar();
+
+            btnLimpiarBusqueda.Click += (_, __) =>
             {
-                if (e.RowIndex >= 0) EditSelectedUsuario();
+                txtBuscar.Clear();
+                CargarUsuarios();
             };
 
-            // empty panel CTA
-            btnEmptyNew.Click += (_, __) => NewUsuario();
-
-            // keyboard shortcuts
-            KeyPreview = true;
-            KeyDown += async (s, ev) =>
+            dgvUsuarios.DataError += (s, e) =>
             {
-                if (ev.KeyCode == Keys.F5) { ev.Handled = true; await CargarAsync(txtBuscar.Text.Trim()); }
-                else if (ev.Control && ev.KeyCode == Keys.N) { ev.Handled = true; NewUsuario(); }
-                else if (ev.Control && ev.KeyCode == Keys.E) { ev.Handled = true; EditSelectedUsuario(); }
-                else if (ev.KeyCode == Keys.Delete) { ev.Handled = true; await DeleteSelectedUsuarioAsync(); }
+                e.ThrowException = false;
             };
 
-            // show/hide empty overlay initially
-            emptyPanel.Visible = false;
-        }
-
-        private void Binding_ListChanged(object? sender, ListChangedEventArgs e)
-        {
-            // Show emptyPanel when no items; hide otherwise
-            var count = _binding.Count;
-            if (InvokeRequired)
+            txtBuscar.KeyDown += (s, e) =>
             {
-                BeginInvoke(new Action(() =>
+                if (e.KeyCode == Keys.Enter)
                 {
-                    emptyPanel.Visible = (count == 0);
-                    lblInfo.Text = $"Registros: {count}";
-                }));
-            }
-            else
-            {
-                emptyPanel.Visible = (count == 0);
-                lblInfo.Text = $"Registros: {count}";
-            }
+                    e.SuppressKeyPress = true;
+                    CargarUsuarios();
+                }
+            };
         }
 
-        private void ApplyPermissions()
+        private void CargarUsuarios()
         {
-            var canEdit = _auth.Can(Permisos.EditUsuarios);
-            btnNuevo.Enabled = canEdit;
-            btnEditar.Enabled = canEdit;
-            btnEliminar.Enabled = canEdit;
-
-            ctxMenuEditar.Enabled = canEdit;
-            ctxMenuEliminar.Enabled = canEdit;
-            ctxMenuNuevo.Enabled = canEdit;
-            btnEmptyNew.Enabled = canEdit;
-        }
-
-        protected override void OnLoad(EventArgs e)
-        {
-            base.OnLoad(e);
-            // initial load
-            _ = CargarAsync();
-        }
-
-        private void HeaderPanel_Paint(object? sender, PaintEventArgs e)
-        {
-            // Draw a soft horizontal gradient
-            var g = e.Graphics;
-            var rect = headerPanel.ClientRectangle;
-            using var brush = new System.Drawing.Drawing2D.LinearGradientBrush(
-                rect,
-                Color.FromArgb(250, 250, 251), // light top
-                Color.FromArgb(240, 246, 255), // slightly bluish bottom
-                System.Drawing.Drawing2D.LinearGradientMode.Vertical);
-            g.FillRectangle(brush, rect);
-
-            // subtle bottom separator
-            using var pen = new Pen(Color.FromArgb(220, 225, 235));
-            g.DrawLine(pen, rect.Left, rect.Bottom - 1, rect.Right, rect.Bottom - 1);
-        }
-
-        private async void TxtBuscar_KeyDown(object? sender, KeyEventArgs e)
-        {
-            if (e.KeyCode == Keys.Enter)
-            {
-                e.Handled = true;
-                e.SuppressKeyPress = true;
-                await CargarAsync(txtBuscar.Text.Trim());
-            }
-        }
-
-        private int? GetSelectedId()
-        {
-            if (dgvUsuarios.CurrentRow == null) return null;
-            if (dgvUsuarios.CurrentRow.Cells["colId"].Value is int id) return id;
-            // sometimes datasource returns long or string; try parse
-            var v = dgvUsuarios.CurrentRow.Cells["colId"].Value;
-            if (v != null && int.TryParse(v.ToString(), out var pid)) return pid;
-            return null;
-        }
-
-        private async Task CargarAsync(string? filtro = null)
-        {
-            // Cancel previous load
-            _loadCts?.Cancel();
-            _loadCts?.Dispose();
-            _loadCts = new CancellationTokenSource();
-            var ct = _loadCts.Token;
-
             try
             {
-                SetLoading(true, "Cargando...");
-                var list = await Task.Run(() => _repo.Listar(filtro), ct).ConfigureAwait(false);
-                if (ct.IsCancellationRequested) return;
+                toolProgress.Visible = true;
+                lblInfo.Text = "Cargando usuarios...";
 
-                // Marshal back to UI
-                if (InvokeRequired)
-                {
-                    BeginInvoke(new Action(() =>
-                    {
-                        _binding.DataSource = new BindingList<Usuario>(list);
-                        // Binding_ListChanged will update lblInfo & emptyPanel
-                        SetLoading(false, "Listo");
-                    }));
-                }
-                else
-                {
-                    _binding.DataSource = new BindingList<Usuario>(list);
-                    SetLoading(false, "Listo");
-                }
-            }
-            catch (OperationCanceledException)
-            {
-                SetLoading(false, "Cancelado");
+                var lista = _svc.Listar(txtBuscar.Text);
+                dgvUsuarios.DataSource = lista;
+
+                emptyPanel.Visible = lista.Count == 0;
+                lblInfo.Text = $"Registros: {lista.Count}";
             }
             catch (Exception ex)
             {
-                SetLoading(false, "Error");
-                MessageBox.Show(this, $"Error al cargar usuarios: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                MessageBox.Show(ex.Message, "Usuarios", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                lblInfo.Text = "Error al cargar";
+            }
+            finally
+            {
+                toolProgress.Visible = false;
             }
         }
 
-        private void SetLoading(bool loading, string statusText)
+        // 🔥 FIX DEFINITIVO AQUÍ
+        private void Seleccionar()
         {
-            if (InvokeRequired)
+            if (dgvUsuarios.CurrentRow == null)
             {
-                BeginInvoke(new Action(() => SetLoading(loading, statusText)));
+                _usuarioIdSeleccionado = null;
                 return;
             }
 
-            toolProgress.Visible = loading;
-            lblInfo.Text = statusText;
-            // disable controls briefly while loading
-            btnRefrescar.Enabled = !loading;
-            btnNuevo.Enabled = !loading && _auth.Can(Permisos.EditUsuarios);
-            btnEditar.Enabled = !loading && _auth.Can(Permisos.EditUsuarios);
-            btnEliminar.Enabled = !loading && _auth.Can(Permisos.EditUsuarios);
-            txtBuscar.Enabled = !loading;
+            var value = dgvUsuarios.CurrentRow.Cells[0].Value;
+
+            if (value == null || value == DBNull.Value)
+            {
+                _usuarioIdSeleccionado = null;
+                return;
+            }
+
+            _usuarioIdSeleccionado = Convert.ToInt32(value);
         }
 
-        private void NewUsuario()
+        private void Nuevo()
         {
-            if (!_auth.Can(Permisos.EditUsuarios)) { MessageBox.Show("No autorizado."); return; }
-            using var f = new FormUsuarioEdit(null);
-            if (f.ShowDialog(this) == DialogResult.OK) _ = CargarAsync(txtBuscar.Text.Trim());
+            using var frm = new FormUsuarioDetalle();
+            if (frm.ShowDialog(this) == DialogResult.OK && frm.GuardadoOk)
+                CargarUsuarios();
         }
 
-        private void EditSelectedUsuario()
+        private void Editar()
         {
-            if (!_auth.Can(Permisos.EditUsuarios)) { MessageBox.Show("No autorizado."); return; }
-            var id = GetSelectedId();
-            if (id == null) { MessageBox.Show("Seleccione un usuario."); return; }
+            if (_usuarioIdSeleccionado == null)
+            {
+                MessageBox.Show("Seleccione un usuario.", "Usuarios", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
 
-            using var f = new FormUsuarioEdit(id.Value);
-            if (f.ShowDialog(this) == DialogResult.OK) _ = CargarAsync(txtBuscar.Text.Trim());
+            using var frm = new FormUsuarioDetalle(_usuarioIdSeleccionado.Value);
+            if (frm.ShowDialog(this) == DialogResult.OK && frm.GuardadoOk)
+                CargarUsuarios();
         }
 
-        private async Task DeleteSelectedUsuarioAsync()
+        private void AbrirDetalle()
         {
-            if (!_auth.Can(Permisos.EditUsuarios)) { MessageBox.Show("No autorizado."); return; }
-            var id = GetSelectedId();
-            if (id == null) { MessageBox.Show("Seleccione un usuario."); return; }
+            if (_usuarioIdSeleccionado == null)
+            {
+                MessageBox.Show("Seleccione un usuario.", "Usuarios", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
 
-            var r = MessageBox.Show(this, "¿Eliminar usuario seleccionado?", "Confirmar",
-                MessageBoxButtons.YesNo, MessageBoxIcon.Question);
-            if (r != DialogResult.Yes) return;
+            using var frm = new FormUsuarioDetalle(_usuarioIdSeleccionado.Value);
+            frm.ShowDialog(this);
+        }
+
+        private void AbrirEditarForm()
+        {
+            if (_usuarioIdSeleccionado == null)
+            {
+                MessageBox.Show("Seleccione un usuario.", "Usuarios", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+
+            using var frm = new FormUsuarioEdit(_usuarioIdSeleccionado.Value);
+            if (frm.ShowDialog(this) == DialogResult.OK)
+                CargarUsuarios();
+        }
+
+        private void Eliminar()
+        {
+            if (_usuarioIdSeleccionado == null)
+            {
+                MessageBox.Show("Seleccione un usuario.", "Usuarios", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+
+            var r = MessageBox.Show(
+                "¿Eliminar usuario?",
+                "Confirmar",
+                MessageBoxButtons.YesNo,
+                MessageBoxIcon.Question);
+
+            if (r != DialogResult.Yes)
+                return;
 
             try
             {
-                SetLoading(true, "Eliminando...");
-                await Task.Run(() => _svc.Eliminar(id.Value));
-                await CargarAsync(txtBuscar.Text.Trim());
+                _svc.Eliminar(_usuarioIdSeleccionado.Value);
+                _usuarioIdSeleccionado = null;
+                CargarUsuarios();
             }
             catch (Exception ex)
             {
-                MessageBox.Show(this, $"Error al eliminar: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                SetLoading(false, "Error");
+                MessageBox.Show(ex.Message, "Usuarios", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
-        }
-
-        protected override void Dispose(bool disposing)
-        {
-            if (disposing)
-            {
-                components?.Dispose();
-                _loadCts?.Cancel();
-                _loadCts?.Dispose();
-            }
-            base.Dispose(disposing);
         }
     }
 }

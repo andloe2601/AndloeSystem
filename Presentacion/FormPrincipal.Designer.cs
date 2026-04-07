@@ -353,13 +353,14 @@
             // 
             // BtnConfiguracionVentas
             // 
-            BtnConfiguracionVentas.Dock = DockStyle.Top;
-            BtnConfiguracionVentas.Location = new Point(0, 324);
-            BtnConfiguracionVentas.Name = "BtnConfiguracionVentas";
-            BtnConfiguracionVentas.Size = new Size(219, 36);
-            BtnConfiguracionVentas.TabIndex = 11;
-            BtnConfiguracionVentas.Text = "Configuracion Ventas";
-            BtnConfiguracionVentas.UseVisualStyleBackColor = true;
+            BtnEtiquetasBarras.Dock = DockStyle.Top;
+            BtnEtiquetasBarras.Location = new Point(0, 72);
+            BtnEtiquetasBarras.Name = "BtnEtiquetasBarras";
+            BtnEtiquetasBarras.Size = new Size(219, 36);
+            BtnEtiquetasBarras.TabIndex = 2;
+            BtnEtiquetasBarras.Text = "Etiquetas Cod_Barra";
+            BtnEtiquetasBarras.UseVisualStyleBackColor = true;
+            BtnEtiquetasBarras.Click += BtnEtiquetasBarras_Click;
             // 
             // BtnReporte
             // 
@@ -605,6 +606,7 @@
             BtnEtiquetasBarras.TabIndex = 2;
             BtnEtiquetasBarras.Text = "Etiquetas Cod_Barra";
             BtnEtiquetasBarras.UseVisualStyleBackColor = true;
+            BtnEtiquetasBarras.Click += BtnEtiquetasBarras_Click;
             // 
             // FormPrincipal
             // 

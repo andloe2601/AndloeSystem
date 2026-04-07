@@ -1,15 +1,15 @@
-﻿using System;
-using System.Data;
-using System.Linq;
-using System.Windows.Forms;
-using Microsoft.Data.SqlClient;
-using Andloe.Data;
+﻿using Andloe.Data;
 using Andloe.Logica;
 using Andloe.Presentacion;
-
+using Guna.UI2.WinForms;
+using Microsoft.Data.SqlClient;
+using System;
+using System.Data;
+using System.Drawing;
+using System.Linq;
+using System.Windows.Forms;
 
 namespace Presentacion
-
 {
     public partial class FormLogin : Form
     {
@@ -18,32 +18,60 @@ namespace Presentacion
         public FormLogin()
         {
             InitializeComponent();
-
-            Load += FormLogin_Load;
-
-            txtUsuario.KeyDown += OnEnterKey;
-            txtPassword.KeyDown += OnEnterKey;
-
-            btnEntrar.Click += (_, __) => DoLogin();
-        
-
-            chkMostrar.CheckedChanged += (_, __) =>
-            {
-                txtPassword.UseSystemPasswordChar = !chkMostrar.Checked;
-            };
         }
 
-        private void FormLogin_Load(object? sender, EventArgs e)
+        private void FormLogin_Load(object sender, EventArgs e)
         {
             try
             {
+                ConfigurarFormulario();
                 CargarEmpresas();
-                txtUsuario.Focus();
             }
             catch (Exception ex)
             {
-                MessageBox.Show(ex.Message, "Error cargando empresas", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                MostrarMensaje("Error cargando empresas: " + ex.Message);
+                CargarPlaceholderEmpresa();
             }
+        }
+
+        private void FormLogin_Shown(object? sender, EventArgs e)
+        {
+            ActiveControl = txtUsuario;
+            txtUsuario.Focus();
+        }
+
+        private void ConfigurarFormulario()
+        {
+            lblMsg.Text = "";
+            lblMsg.Visible = false;
+            lblMsg.AutoSize = false;
+            lblMsg.TextAlign = ContentAlignment.MiddleCenter;
+
+            txtPassword.UseSystemPasswordChar = true;
+            chkMostrar.Checked = false;
+
+            cbEmpresa.DropDownStyle = ComboBoxStyle.DropDownList;
+            cbEmpresa.DrawMode = DrawMode.OwnerDrawFixed;
+            cbEmpresa.ItemHeight = 30;
+
+            cbEmpresa.BackColor = Color.Transparent;
+            cbEmpresa.FillColor = Color.White;
+            cbEmpresa.ForeColor = Color.Black;
+            cbEmpresa.Font = new Font("Segoe UI", 10F);
+
+            cbEmpresa.BorderColor = Color.LightGray;
+            cbEmpresa.BorderThickness = 1;
+            cbEmpresa.BorderRadius = 8;
+
+            cbEmpresa.FocusedState.BorderColor = Color.DodgerBlue;
+            cbEmpresa.HoverState.BorderColor = Color.DodgerBlue;
+
+            cbEmpresa.ItemsAppearance.BackColor = Color.White;
+            cbEmpresa.ItemsAppearance.ForeColor = Color.Black;
+            cbEmpresa.ItemsAppearance.SelectedBackColor = Color.FromArgb(230, 230, 230);
+            cbEmpresa.ItemsAppearance.SelectedForeColor = Color.Black;
+
+            cbEmpresa.StartIndex = 0;
         }
 
         private void OnEnterKey(object? sender, KeyEventArgs e)
@@ -59,36 +87,69 @@ namespace Presentacion
         {
             using var cn = Db.GetOpenConnection();
             using var cmd = new SqlCommand(@"
-SELECT EmpresaId, RazonSocial
-FROM dbo.Empresa
-WHERE Estado = 1
-ORDER BY RazonSocial;", cn);
+                SELECT EmpresaId, RazonSocial
+                FROM dbo.Empresa
+                WHERE Estado = 1
+                ORDER BY RazonSocial;", cn);
 
             var dt = new DataTable();
             dt.Load(cmd.ExecuteReader());
 
+            var fila = dt.NewRow();
+            fila["EmpresaId"] = 0;
+            fila["RazonSocial"] = "Seleccione una empresa";
+            dt.Rows.InsertAt(fila, 0);
+
+            cbEmpresa.DataSource = null;
             cbEmpresa.DisplayMember = "RazonSocial";
             cbEmpresa.ValueMember = "EmpresaId";
             cbEmpresa.DataSource = dt;
 
-            if (cbEmpresa.Items.Count > 0)
-                cbEmpresa.SelectedIndex = 0;
+            cbEmpresa.SelectedIndex = 0;
+        }
+
+        private void CargarPlaceholderEmpresa()
+        {
+            var dt = new DataTable();
+            dt.Columns.Add("EmpresaId", typeof(int));
+            dt.Columns.Add("RazonSocial", typeof(string));
+
+            dt.Rows.Add(0, "Seleccione una empresa");
+
+            cbEmpresa.DataSource = null;
+            cbEmpresa.DisplayMember = "RazonSocial";
+            cbEmpresa.ValueMember = "EmpresaId";
+            cbEmpresa.DataSource = dt;
+
+            cbEmpresa.SelectedIndex = 0;
         }
 
         private void DoLogin()
         {
-            lblMsg.Text = "";
+            LimpiarMensaje();
 
             var usuario = txtUsuario.Text.Trim();
             var pass = txtPassword.Text;
 
-            if (usuario.Length == 0) { lblMsg.Text = "Ingrese usuario."; txtUsuario.Focus(); return; }
-            if (pass.Length == 0) { lblMsg.Text = "Ingrese contraseña."; txtPassword.Focus(); return; }
+            if (string.IsNullOrWhiteSpace(usuario))
+            {
+                MostrarMensaje("Tiene que ingresar un usuario");
+                txtUsuario.Focus();
+                return;
+            }
+
+            if (string.IsNullOrWhiteSpace(pass))
+            {
+                MostrarMensaje("Tiene que ingresar una contraseña");
+                txtPassword.Focus();
+                return;
+            }
 
             if (cbEmpresa.SelectedValue == null ||
-                !int.TryParse(cbEmpresa.SelectedValue.ToString(), out var empresaId) || empresaId <= 0)
+                !int.TryParse(cbEmpresa.SelectedValue.ToString(), out var empresaId) ||
+                empresaId <= 0)
             {
-                lblMsg.Text = "Seleccione una empresa.";
+                MostrarMensaje("Seleccione una empresa");
                 cbEmpresa.Focus();
                 return;
             }
@@ -96,9 +157,10 @@ ORDER BY RazonSocial;", cn);
             try
             {
                 var res = _auth.Login(usuario, pass);
+
                 if (!res.Exitoso)
                 {
-                    lblMsg.Text = res.Mensaje;
+                    MostrarMensaje(res.Mensaje);
                     txtPassword.SelectAll();
                     txtPassword.Focus();
                     return;
@@ -106,77 +168,88 @@ ORDER BY RazonSocial;", cn);
 
                 var usuarioId = res.Usuario?.UsuarioId ?? 0;
                 var displayUser = res.Usuario?.UsuarioNombre ?? usuario;
+                var roles = res.Roles?.ToArray() ?? Array.Empty<string>();
 
                 if (usuarioId <= 0)
                 {
-                    lblMsg.Text = "Login OK pero UsuarioId inválido. Revisa AuthResult.Usuario.";
+                    MostrarMensaje("Error al obtener el usuario.");
                     return;
                 }
 
-                // ✅ Sesión
+                // Debug temporal si quieres validar roles:
+                // MessageBox.Show(string.Join(", ", roles), "Roles cargados");
+
                 SesionService.Iniciar(usuarioId, displayUser, empresaId);
-
-                // ✅ Auditoría: set contexto y log de login
                 AuditContext.SetUser(usuarioId, displayUser);
-                new AuditoriaService().Log(
-                    modulo: "SEGURIDAD",
-                    accion: "LOGIN",
-                    entidad: "Usuario",
-                    entidadId: usuarioId.ToString(),
-                    detalle: $"Login exitoso. EmpresaId={empresaId}"
-                );
-
-                // Roles para el principal (como ya lo tienes)
-                var roles = (res.Roles ?? new()).Select(r => r.Nombre).ToArray();
 
                 Hide();
+
                 using (var main = new FormPrincipal(displayUser, roles))
                 {
                     main.StartPosition = FormStartPosition.CenterScreen;
                     main.ShowDialog(this);
                 }
 
-                // ✅ Auditoría: logout (cuando se cierra el principal)
-                new AuditoriaService().Log(
-                    modulo: "SEGURIDAD",
-                    accion: "LOGOUT",
-                    entidad: "Usuario",
-                    entidadId: usuarioId.ToString(),
-                    detalle: "Salida del sistema"
-                );
-
-                // limpiar sesión
                 SesionService.Cerrar();
                 AuditContext.ClearUser();
 
                 Show();
                 txtPassword.Clear();
-                txtPassword.Focus();
+                cbEmpresa.SelectedIndex = 0;
+                txtUsuario.Focus();
             }
             catch (Exception ex)
             {
-                lblMsg.Text = ex.Message;
+                MostrarMensaje("Error al iniciar sesión: " + ex.Message);
             }
+        }
+
+        private void MostrarMensaje(string mensaje)
+        {
+            lblMsg.Text = mensaje;
+            lblMsg.Visible = true;
+        }
+
+        private void LimpiarMensaje()
+        {
+            lblMsg.Text = "";
+            lblMsg.Visible = false;
+        }
+
+        private void btnEntrar_Click(object sender, EventArgs e)
+        {
+            DoLogin();
         }
 
         private void chkMostrar_CheckedChanged(object sender, EventArgs e)
         {
-
-        }
-
-        private void panel_Paint(object sender, PaintEventArgs e)
-        {
-
-        }
-
-        private void FormLogin_Load_1(object sender, EventArgs e)
-        {
-
+            txtPassword.UseSystemPasswordChar = !chkMostrar.Checked;
         }
 
         private void pictureBox3_Click(object sender, EventArgs e)
         {
+            txtPassword.UseSystemPasswordChar = !txtPassword.UseSystemPasswordChar;
+        }
 
+        private void btnCerrar_Click(object sender, EventArgs e)
+        {
+            Application.Exit();
+        }
+
+        private void panelDerecho_Paint(object sender, PaintEventArgs e)
+        {
+        }
+
+        private void lblTitulo_Click(object sender, EventArgs e)
+        {
+        }
+
+        private void lblMsg_Click(object sender, EventArgs e)
+        {
+        }
+
+        private void cbEmpresa_SelectedIndexChanged_2(object sender, EventArgs e)
+        {
         }
     }
 }

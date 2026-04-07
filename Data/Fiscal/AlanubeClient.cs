@@ -1,5 +1,4 @@
-﻿using Andloe.Entidad;
-using System;
+﻿using System;
 using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Text;
@@ -30,16 +29,16 @@ namespace Andloe.Data.Fiscal
         }
 
         public AlanubeEmitResponseDto EmitirFactura31(string requestJson)
-            => Post("fiscal-invoices", requestJson);
+    => Post("fiscal-invoices", requestJson);
 
         public AlanubeEmitResponseDto EmitirFactura32(string requestJson)
-            => Post("consumer-invoices", requestJson);
+            => Post("invoices", requestJson);
 
         public AlanubeStatusResponseDto ConsultarFactura31(string trackOrId)
             => Get($"fiscal-invoices/{Uri.EscapeDataString((trackOrId ?? "").Trim())}");
 
         public AlanubeStatusResponseDto ConsultarFactura32(string trackOrId)
-            => Get($"consumer-invoices/{Uri.EscapeDataString((trackOrId ?? "").Trim())}");
+            => Get($"invoices/{Uri.EscapeDataString((trackOrId ?? "").Trim())}");
 
         private AlanubeEmitResponseDto Post(string endpoint, string requestJson)
         {

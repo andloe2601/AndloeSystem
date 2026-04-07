@@ -530,7 +530,6 @@ namespace Andloe.Presentacion
             btnRegistrarFactura.Name = "btnRegistrarFactura";
             btnRegistrarFactura.Size = new Size(160, 23);
             btnRegistrarFactura.TabIndex = 7;
-            //btnRegistrarFactura.Click += btnRegistrarFactura_Click;
             // 
             // btnImprimir
             // 

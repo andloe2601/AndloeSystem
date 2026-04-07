@@ -227,10 +227,12 @@ namespace Andloe.Presentacion
                     MessageBoxButtons.OK,
                     MessageBoxIcon.Error);
             }
-            finally
             {
                 SetWorking(false);
             }
+
+
+
         }
 
         private void ConsultarAlanube()

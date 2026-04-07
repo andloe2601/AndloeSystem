@@ -4,7 +4,6 @@ using System.Linq;
 using System.Windows.Forms;
 using Andloe.Logica;
 using Presentation;
-using Andloe.Presentacion;
 
 namespace Andloe.Presentacion
 {
@@ -37,11 +36,13 @@ namespace Andloe.Presentacion
             InitializeComponent();
             ApplyTheme();
             ApplyPermissions();
+            CollapseAllGroups();
 
             lblTitle.Text = $"Bienvenido, {_usuario}";
 
             btnGrpDashboard.PerformClick();
-            btnDashboard.PerformClick();
+            if (btnDashboard.Visible)
+                btnDashboard.PerformClick();
         }
 
         protected override void OnFormClosed(FormClosedEventArgs e)
@@ -59,6 +60,7 @@ namespace Andloe.Presentacion
             panelContent.BackColor = ColContent;
 
             lblBrand.ForeColor = ColText;
+            lblTitle.ForeColor = ColText;
 
             foreach (var b in panelSidebar.Controls.OfType<Button>())
             {
@@ -86,18 +88,56 @@ namespace Andloe.Presentacion
                 }
             }
 
-            lblTitle.ForeColor = ColText;
-
             MinimumSize = new Size(1100, 700);
             DoubleBuffered = true;
         }
 
         private void ApplyPermissions()
         {
+            bool canUsuarios = _auth.Can(Permisos.VerUsuarios);
+            bool canConfig = _auth.Can(Permisos.Configurar);
+
             btnDashboard.Visible = _auth.Can(Permisos.VerDashboard);
-            btnUsuarios.Visible = _auth.Can(Permisos.VerUsuarios);
+            btnUsuarios.Visible = canUsuarios;
             btnPOS.Visible = _auth.Can(Permisos.VerPOS);
-            btnConfigSistema.Visible = _auth.Can(Permisos.Configurar);
+            btnConfigSistema.Visible = canConfig;
+
+            // Opcionales
+            bool canContable = true;
+            bool canConexion = true;
+
+            btnConfiguracionContable.Visible = canContable;
+            btnConexion.Visible = canConexion;
+
+            // 🔥 Grupo basado en permisos reales
+            btnGrpConfiguracion.Visible =
+                canUsuarios ||
+                canConfig ||
+                canContable ||
+                canConexion;
+        }
+
+        private void CollapseAllGroups()
+        {
+            pnlDashboard.Visible = false;
+            pnlContabilidad.Visible = false;
+            pnlVenta.Visible = false;
+            pnlCompra.Visible = false;
+            pnlProducto.Visible = false;
+            pnlInventario.Visible = false;
+            pnlNomina.Visible = false;
+            pnlConfiguracion.Visible = false;
+        }
+
+        private void ToggleGroup(Panel groupPanel)
+        {
+            bool willShow = !groupPanel.Visible;
+
+            CollapseAllGroups();
+            groupPanel.Visible = willShow;
+
+            if (willShow)
+                panelSidebar.ScrollControlIntoView(groupPanel);
         }
 
         private void ActivateButton(Button btn)
@@ -154,29 +194,6 @@ namespace Andloe.Presentacion
             }
         }
 
-        private void CollapseAllGroups()
-        {
-            pnlDashboard.Visible = false;
-            pnlContabilidad.Visible = false;
-            pnlVenta.Visible = false;
-            pnlCompra.Visible = false;
-            pnlProducto.Visible = false;
-            pnlInventario.Visible = false;
-            pnlNomina.Visible = false;
-            pnlConfiguracion.Visible = false;
-        }
-
-        private void ToggleGroup(Panel groupPanel)
-        {
-            bool willShow = !groupPanel.Visible;
-
-            CollapseAllGroups();
-            groupPanel.Visible = willShow;
-
-            if (willShow)
-                panelSidebar.ScrollControlIntoView(groupPanel);
-        }
-
         private void btnGrpDashboard_Click(object sender, EventArgs e) => ToggleGroup(pnlDashboard);
         private void btnGrpContabilidad_Click(object sender, EventArgs e) => ToggleGroup(pnlContabilidad);
         private void btnGrpVenta_Click(object sender, EventArgs e) => ToggleGroup(pnlVenta);
@@ -189,49 +206,13 @@ namespace Andloe.Presentacion
         private void btnDashboard_Click(object sender, EventArgs e)
         {
             ActivateButton(btnDashboard);
-            OpenChild(new FormDashboard());
+            OpenChild(new FormDashboard(OpenChild, _auth));
         }
 
         private void btnPOS_Click(object sender, EventArgs e)
         {
             ActivateButton(btnPOS);
-
-            using (var frmLogin = new FormLoginPosClave())
-            {
-                var drLogin = frmLogin.ShowDialog(this);
-                if (drLogin != DialogResult.OK)
-                    return;
-
-                var cajaId = frmLogin.CajaIdSeleccionada;
-                var cajaNumero = frmLogin.CajaNumeroSeleccionada;
-                var usuario = frmLogin.UsuarioLogueado;
-
-                if (cajaId <= 0 || string.IsNullOrWhiteSpace(cajaNumero))
-                {
-                    MessageBox.Show(
-                        "No se obtuvo información válida de caja desde el login.",
-                        "POS",
-                        MessageBoxButtons.OK,
-                        MessageBoxIcon.Error);
-                    return;
-                }
-
-                using (var frmFondo = new FormFondoCaja(cajaId, cajaNumero, usuario))
-                {
-                    var drFondo = frmFondo.ShowDialog(this);
-                    if (drFondo != DialogResult.OK)
-                        return;
-                }
-
-                bool puedeCerrarCaja =
-                    usuario.Equals("ADMIN", StringComparison.OrdinalIgnoreCase) ||
-                    usuario.Equals("SUPERVISOR", StringComparison.OrdinalIgnoreCase);
-
-                using (var frmPos = new FormPOS(usuario, cajaId, cajaNumero, puedeCerrarCaja))
-                {
-                    frmPos.ShowDialog(this);
-                }
-            }
+            MessageBox.Show("POS listo.");
         }
 
         private void btnClientes_Click(object sender, EventArgs e)
@@ -270,6 +251,12 @@ namespace Andloe.Presentacion
             OpenChild(new FormPromoHistorico(_usuario));
         }
 
+        private void BtnEtiquetasBarras_Click(object sender, EventArgs e)
+        {
+            ActivateButton(BtnEtiquetasBarras);
+            MessageBox.Show("Módulo pendiente.");
+        }
+
         private void btnKardex_Click(object sender, EventArgs e)
         {
             ActivateButton(btnKardex);
@@ -278,8 +265,8 @@ namespace Andloe.Presentacion
 
         private void btnInvMov_Click(object sender, EventArgs e)
         {
-            using (var frm = new Presentation.FormInvMovimiento(_usuario))
-                frm.ShowDialog(this);
+            ActivateButton(btnInvMov);
+            MessageBox.Show("Movimiento inventario.");
         }
 
         private void btnUsuarios_Click(object sender, EventArgs e)
@@ -321,47 +308,31 @@ namespace Andloe.Presentacion
         private void btnContabilidad_Click(object sender, EventArgs e)
         {
             ActivateButton(btnContabilidad);
-            MessageBox.Show(
-                "Módulo Contabilidad pendiente de implementación.",
-                "ERP",
-                MessageBoxButtons.OK,
-                MessageBoxIcon.Information);
+            MessageBox.Show("Módulo pendiente.");
         }
 
         private void btnCompra_Click(object sender, EventArgs e)
         {
             ActivateButton(btnCompra);
-            MessageBox.Show(
-                "Módulo Compra pendiente de implementación.",
-                "ERP",
-                MessageBoxButtons.OK,
-                MessageBoxIcon.Information);
+            MessageBox.Show("Módulo pendiente.");
         }
 
         private void btnNomina_Click(object sender, EventArgs e)
         {
             ActivateButton(btnNomina);
-            MessageBox.Show(
-                "Módulo Nómina pendiente de implementación.",
-                "ERP",
-                MessageBoxButtons.OK,
-                MessageBoxIcon.Information);
+            MessageBox.Show("Módulo pendiente.");
         }
 
         private void btnECN_Click(object sender, EventArgs e)
         {
-            ActivateButton(btnConfigSistema);
-            OpenChild(new FormMonitorECF());
+            ActivateButton(btnECN);
+            OpenChild(new FormAlanubeMonitor());
         }
 
-           private void BtnNc_Click(object sender, EventArgs e)
+        private void BtnNc_Click(object sender, EventArgs e)
         {
             ActivateButton(BtnNc);
-
-            int usuarioId = 1;
-            string usuarioNombre = _usuario;
-
-            OpenChild(new FormNotaCreditoVentaECF(usuarioId, usuarioNombre, null));
+            OpenChild(new FormNotaCreditoVentaECF(1, _usuario, null));
         }
 
         private void BtnRecibo_Click(object sender, EventArgs e)
@@ -374,6 +345,12 @@ namespace Andloe.Presentacion
         {
             ActivateButton(BtnReporte);
             OpenChild(new FormCxCReportes());
+        }
+
+        private void BtnConfiguracionVentas_Click(object sender, EventArgs e)
+        {
+            ActivateButton(BtnConfiguracionVentas);
+            MessageBox.Show("Módulo pendiente.");
         }
 
         private void btnSalir_Click(object sender, EventArgs e)

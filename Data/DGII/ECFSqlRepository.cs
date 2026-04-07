@@ -139,9 +139,9 @@ WHERE FacturaId = @FacturaId;", cn);
 
             cmd.ExecuteNonQuery();
         }
-    
 
-    public string GenerarENcf(
+
+        public string GenerarENcf(
     int empresaId,
     int sucursalId,
     int cajaId,
@@ -150,28 +150,45 @@ WHERE FacturaId = @FacturaId;", cn);
     string prefijo)
         {
             using var cn = Db.GetOpenConnection();
-            using var cmd = new SqlCommand("sp_Factura_GenerarENcf", cn);
+            using var cmd = new SqlCommand("dbo.sp_Factura_GenerarENcf", cn)
+            {
+                CommandType = CommandType.StoredProcedure
+            };
 
-            cmd.CommandType = CommandType.StoredProcedure;
+            var ambiente = ObtenerAmbienteEcf();
 
-            cmd.Parameters.AddWithValue("@EmpresaId", empresaId);
-            cmd.Parameters.AddWithValue("@SucursalId", sucursalId);
-            cmd.Parameters.AddWithValue("@CajaId", cajaId);
-            cmd.Parameters.AddWithValue("@FacturaId", facturaId);
-            cmd.Parameters.AddWithValue("@TipoId", tipoEcf);
-            cmd.Parameters.AddWithValue("@Prefijo", prefijo);
-            cmd.Parameters.AddWithValue("@TrackId", DBNull.Value);
+            cmd.Parameters.Add("@EmpresaId", SqlDbType.Int).Value = empresaId;
+            cmd.Parameters.Add("@SucursalId", SqlDbType.Int).Value = sucursalId;
+            cmd.Parameters.Add("@CajaId", SqlDbType.Int).Value = cajaId;
+            cmd.Parameters.Add("@FacturaId", SqlDbType.BigInt).Value = facturaId;
+            cmd.Parameters.Add("@TipoId", SqlDbType.Int).Value = tipoEcf;
+            cmd.Parameters.Add("@Prefijo", SqlDbType.VarChar, 4).Value = prefijo;
+            cmd.Parameters.Add("@Ambiente", SqlDbType.VarChar, 20).Value = ambiente;
+            cmd.Parameters.Add("@TrackId", SqlDbType.VarChar, 80).Value = DBNull.Value;
 
             var outParam = new SqlParameter("@ENcfOut", SqlDbType.VarChar, 20)
             {
                 Direction = ParameterDirection.Output
             };
-
             cmd.Parameters.Add(outParam);
 
             cmd.ExecuteNonQuery();
 
             return outParam.Value?.ToString() ?? "";
+        }
+
+        private static string ObtenerAmbienteEcf()
+        {
+            var cfg = new SistemaConfigRepository();
+            var ambiente = (cfg.GetValor("ALANUBE_AMBIENTE") ?? "SANDBOX").Trim().ToUpperInvariant();
+
+            return ambiente switch
+            {
+                "SANDBOX" => "SANDBOX",
+                "PRODUCCION" => "PRODUCCION",
+                "PRODUCCIÓN" => "PRODUCCION",
+                _ => "SANDBOX"
+            };
         }
     }
 }

@@ -3,6 +3,7 @@ using Andloe.Data.DGII;
 using Andloe.Entidad;
 using Andloe.Logica;
 using Andloe.Logica.DGII;
+using Data;
 using Logica;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -361,7 +362,7 @@ namespace Andloe.Presentacion
             }
 
             // Cliente con doc => validar doc si el tipo lo requiere
-            if (prefijo == "E31" || prefijo == "E34")
+            if (prefijo == "E31" || prefijo == "E34" || prefijo == "E45")
             {
                 if (!DocValidoRncOCedula(txtClienteRnc.Text))
                     throw new InvalidOperationException("RNC/Cédula inválido. Debe tener 9 (RNC) o 11 (Cédula) dígitos.");
@@ -480,7 +481,7 @@ namespace Andloe.Presentacion
                 if (string.IsNullOrWhiteSpace(prefijo)) return false;
 
                 // E31/E34 requieren doc, E32 no
-                var requiereDoc = (prefijo == "E31" || prefijo == "E34");
+                var requiereDoc = (prefijo == "E31" || prefijo == "E34" || prefijo == "E45");
                 if (requiereDoc && string.IsNullOrWhiteSpace(SoloDigitos(txtClienteRnc.Text)))
                     return false;
             }
@@ -1014,6 +1015,26 @@ namespace Andloe.Presentacion
                         MessageBoxButtons.OK,
                         MessageBoxIcon.Warning
                     );
+
+                    ImprimirFacturaRI();
+                    return;
+                }
+
+                try
+                {
+                    EnviarAlanubeSiAplica(_facturaId);
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show(
+                        $"Factura registrada y XML generado, pero falló el envío a Alanube.\n{ex.Message}",
+                        "Alanube Sandbox",
+                        MessageBoxButtons.OK,
+                        MessageBoxIcon.Warning
+                    );
+
+                    ImprimirFacturaRI();
+                    return;
                 }
 
                 ImprimirFacturaRI();
@@ -1032,45 +1053,29 @@ namespace Andloe.Presentacion
             if (!string.Equals(tipoDoc, FacturaRepository.TIPO_FAC, StringComparison.OrdinalIgnoreCase))
                 return null;
 
-            // ✅ Validación PRO completa
             ValidarDgiiProAntesDeGenerar();
 
             var prefijo = (Convert.ToString(cboTipoComprobante.SelectedValue) ?? "")
-                .Trim().ToUpperInvariant(); // E31/E32/E34
+                .Trim()
+                .ToUpperInvariant();
 
             if (prefijo.Length != 3 || prefijo[0] != 'E' || !char.IsDigit(prefijo[1]) || !char.IsDigit(prefijo[2]))
                 throw new InvalidOperationException("Tipo de comprobante inválido. Formato esperado: E31/E32/E34.");
 
-            var tipoId = int.Parse(prefijo.Substring(1, 2)); // 31,32,34
-
+            var tipoId = int.Parse(prefijo.Substring(1, 2));
             var s = SesionService.Current;
             var cajaId = s.CajaId ?? 0;
 
-            using var cn = Db.GetOpenConnection();
-            using var cmd = new SqlCommand("dbo.sp_Factura_GenerarENcf", cn)
-            {
-                CommandType = CommandType.StoredProcedure
-            };
+            var repo = new ECFSqlRepository();
 
-            cmd.Parameters.Add("@EmpresaId", SqlDbType.Int).Value = s.EmpresaId;
-            cmd.Parameters.Add("@SucursalId", SqlDbType.Int).Value = s.SucursalId;
-            cmd.Parameters.Add("@CajaId", SqlDbType.Int).Value = cajaId;
-
-            cmd.Parameters.Add("@FacturaId", SqlDbType.BigInt).Value = _facturaId;
-            cmd.Parameters.Add("@TipoId", SqlDbType.Int).Value = tipoId;
-            cmd.Parameters.Add("@Prefijo", SqlDbType.VarChar, 4).Value = prefijo;
-
-            cmd.Parameters.Add("@TrackId", SqlDbType.VarChar, 80).Value = DBNull.Value;
-
-            var pOut = new SqlParameter("@ENcfOut", SqlDbType.VarChar, 20)
-            {
-                Direction = ParameterDirection.Output
-            };
-            cmd.Parameters.Add(pOut);
-
-            cmd.ExecuteNonQuery();
-
-            return pOut.Value?.ToString();
+            return repo.GenerarENcf(
+                empresaId: s.EmpresaId,
+                sucursalId: s.SucursalId,
+                cajaId: cajaId,
+                facturaId: _facturaId,
+                tipoEcf: tipoId,
+                prefijo: prefijo
+            );
         }
 
         // ============================================================
@@ -1167,7 +1172,8 @@ namespace Andloe.Presentacion
             {
                 new { Text = "e-Factura de Crédito Fiscal", Value = "E31" },
                 new { Text = "e-Factura de Consumo",        Value = "E32" },
-                new { Text = "e-Comprobante Gubernamental", Value = "E34" },
+                new { Text = "e-Comprobante Gubernamental", Value = "E45" },
+
             }.ToList();
 
             // 🔥 Por defecto E32
