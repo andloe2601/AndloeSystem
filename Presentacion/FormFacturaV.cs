@@ -22,7 +22,7 @@ namespace Andloe.Presentacion
     {
         private readonly FacturaRepository _facRepo = new();
         private readonly ProductoRepository _prodRepo = new();
-        private readonly TerminoPagoRepository _tpRepo = new();
+        //private readonly TerminoPagoRepository _tpRepo = new();
         private readonly DgiiRncRepository _dgiiRepo = new();
         private readonly ClienteRepository _cliRepo = new();
         private readonly VendedorRepository _vendRepo = new();
@@ -1157,10 +1157,10 @@ namespace Andloe.Presentacion
 
             cboTipoDoc.SelectedValue = FacturaRepository.TIPO_COT;
 
-            var tps = _tpRepo.ListarActivos();
+           // var tps = _tpRepo.ListarActivos();
             cboTerminoPago.DisplayMember = "Descripcion";
             cboTerminoPago.ValueMember = "TerminoPagoId";
-            cboTerminoPago.DataSource = tps;
+          //  cboTerminoPago.DataSource = tps;
 
             cboTerminoPago.Enabled = false;
             txtDiasCredito.Enabled = false;

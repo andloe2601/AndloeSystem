@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Data;
 using System.Globalization;
@@ -21,7 +21,11 @@ SELECT TOP(@top)
     [Código], [Nombre], [RNC_Cedula], [Telefono], [Email], [Direccion],
     [Tipo], [Estado], [FechaCreacion],
     CreditoMaximo, CodDivisas, CodTerminoPagos, CodVendedor, CodAlmacen,
-    ClienteId, DescuentoPctMax
+    ClienteId, DescuentoPctMax,
+    RazonSocialFiscal, NombreComercialFiscal, TipoIdentificacionFiscal,
+    MunicipioCodigo, ProvinciaCodigo, PaisCodigo, CorreoFiscal,
+    EsContribuyente, TipoClienteFiscal, ValidadoDGII, FechaValidacionDGII,
+    EstadoRncDGII, IdentificadorExtranjero, EsExtranjero
 FROM dbo.Cliente
 WHERE (@filtro IS NULL OR [Código] LIKE @like OR [Nombre] LIKE @like OR [RNC_Cedula] LIKE @like)
 ORDER BY [FechaCreacion] DESC, [Código] DESC;", cn);
@@ -42,28 +46,7 @@ ORDER BY [FechaCreacion] DESC, [Código] DESC;", cn);
             using var rd = cmd.ExecuteReader();
             while (rd.Read())
             {
-                list.Add(new Cliente
-                {
-                    Codigo = rd.GetString(0),
-                    Nombre = rd.GetString(1),
-                    RncCedula = rd.IsDBNull(2) ? null : rd.GetString(2),
-                    Telefono = rd.IsDBNull(3) ? null : rd.GetString(3),
-                    Email = rd.IsDBNull(4) ? null : rd.GetString(4),
-                    Direccion = rd.IsDBNull(5) ? null : rd.GetString(5),
-
-                    Tipo = rd.IsDBNull(7) ? (byte)0 : rd.GetByte(7),
-                    Estado = rd.IsDBNull(7) ? (byte)1 : rd.GetByte(7),
-                    FechaCreacion = rd.IsDBNull(8) ? (DateTime?)null : rd.GetDateTime(8),
-
-                    CreditoMaximo = rd.IsDBNull(9) ? (decimal?)null : rd.GetDecimal(9),
-                    CodDivisas = rd.IsDBNull(10) ? null : rd.GetString(10),
-                    CodTerminoPagos = rd.IsDBNull(11) ? null : rd.GetString(11),
-                    CodVendedor = rd.IsDBNull(12) ? null : rd.GetString(12),
-                    CodAlmacen = rd.IsDBNull(13) ? null : rd.GetString(13),
-
-                    ClienteId = rd.IsDBNull(14) ? 0 : rd.GetInt32(14),
-                    DescuentoPctMax = rd.IsDBNull(15) ? (decimal?)null : rd.GetDecimal(15)
-                });
+                list.Add(MapCliente(rd));
             }
             return list;
         }
@@ -179,7 +162,15 @@ SET [Nombre] = @nom,
     [RNC_Cedula] = @rnc,
     [Tipo] = ISNULL([Tipo], 0),
     [Estado] = ISNULL([Estado], 1),
-    [FechaCreacion] = ISNULL([FechaCreacion], GETDATE())
+    [FechaCreacion] = ISNULL([FechaCreacion], GETDATE()),
+    RazonSocialFiscal = @razon,
+    NombreComercialFiscal = @nombreComercial,
+    TipoIdentificacionFiscal = 1,
+    ValidadoDGII = 1,
+    FechaValidacionDGII = GETDATE(),
+    EstadoRncDGII = 'ACTIVO',
+    EsExtranjero = 0,
+    EsContribuyente = 1
 WHERE [Código] = @cod;
 
 SELECT TOP(1) ClienteId
@@ -188,8 +179,9 @@ WHERE [Código] = @cod;", cn, tx);
 
                 cmd.Parameters.Add("@nom", SqlDbType.NVarChar, 120).Value =
                     (object)(nombreFinal.Length > 120 ? nombreFinal[..120] : nombreFinal);
-
                 cmd.Parameters.Add("@rnc", SqlDbType.VarChar, 20).Value = rnc;
+                cmd.Parameters.Add("@razon", SqlDbType.VarChar, 200).Value = (object?)LimpiarTexto(nombre) ?? DBNull.Value;
+                cmd.Parameters.Add("@nombreComercial", SqlDbType.VarChar, 200).Value = (object?)LimpiarTexto(nombreComercial) ?? DBNull.Value;
                 cmd.Parameters.Add("@cod", SqlDbType.VarChar, 20).Value = codigoGenerado;
 
                 var idObj = cmd.ExecuteScalar();
@@ -235,10 +227,14 @@ WHERE [RNC_Cedula] = @rnc;", cn, tx);
         {
             using var cn = Db.GetOpenConnection();
             using var cmd = new SqlCommand(@"
-SELECT [Código], [Nombre], [RNC_Cedula], [Telefono], [Email], [Direccion], DescuentoPctMax,
+SELECT [Código], [Nombre], [RNC_Cedula], [Telefono], [Email], [Direccion],
        [Tipo], [Estado], [FechaCreacion],
        CreditoMaximo, CodDivisas, CodTerminoPagos, CodVendedor, CodAlmacen,
-       ClienteId
+       ClienteId, DescuentoPctMax,
+       RazonSocialFiscal, NombreComercialFiscal, TipoIdentificacionFiscal,
+       MunicipioCodigo, ProvinciaCodigo, PaisCodigo, CorreoFiscal,
+       EsContribuyente, TipoClienteFiscal, ValidadoDGII, FechaValidacionDGII,
+       EstadoRncDGII, IdentificadorExtranjero, EsExtranjero
 FROM dbo.Cliente
 WHERE [Código]=@c;", cn);
 
@@ -247,25 +243,7 @@ WHERE [Código]=@c;", cn);
             using var rd = cmd.ExecuteReader();
             if (!rd.Read()) return null;
 
-            return new Cliente
-            {
-                Codigo = rd.GetString(0),
-                Nombre = rd.GetString(1),
-                RncCedula = rd.IsDBNull(2) ? null : rd.GetString(2),
-                Telefono = rd.IsDBNull(3) ? null : rd.GetString(3),
-                Email = rd.IsDBNull(4) ? null : rd.GetString(4),
-                Direccion = rd.IsDBNull(5) ? null : rd.GetString(5),
-                DescuentoPctMax = rd.IsDBNull(6) ? (decimal?)null : rd.GetDecimal(6),
-                Tipo = rd.IsDBNull(7) ? (byte)0 : rd.GetByte(7),
-                Estado = rd.IsDBNull(8) ? (byte)1 : rd.GetByte(8),
-                FechaCreacion = rd.IsDBNull(9) ? (DateTime?)null : rd.GetDateTime(9),
-                CreditoMaximo = rd.IsDBNull(10) ? (decimal?)null : rd.GetDecimal(10),
-                CodDivisas = rd.IsDBNull(11) ? null : rd.GetString(11),
-                CodTerminoPagos = rd.IsDBNull(12) ? null : rd.GetString(12),
-                CodVendedor = rd.IsDBNull(13) ? null : rd.GetString(13),
-                CodAlmacen = rd.IsDBNull(14) ? null : rd.GetString(14),
-                ClienteId = rd.IsDBNull(15) ? 0 : rd.GetInt32(15)
-            };
+            return MapCliente(rd);
         }
 
         public string CrearAuto(
@@ -342,7 +320,12 @@ UPDATE dbo.Cliente
    SET [Nombre]=@n, [RNC_Cedula]=@r, [Telefono]=@t, [Email]=@e, [Direccion]=@d,
        [Tipo]=@ti, [Estado]=@es,
        CreditoMaximo=@cm, CodDivisas=@div, CodTerminoPagos=@ter, CodVendedor=@ven, CodAlmacen=@alm,
-       DescuentoPctMax=@des
+       DescuentoPctMax=@des,
+       RazonSocialFiscal=@razon, NombreComercialFiscal=@nomCom,
+       TipoIdentificacionFiscal=@tipoId, MunicipioCodigo=@mun, ProvinciaCodigo=@prov, PaisCodigo=@pais,
+       CorreoFiscal=@correoFiscal, EsContribuyente=@contrib, TipoClienteFiscal=@tipoCliFiscal,
+       ValidadoDGII=@validado, FechaValidacionDGII=@fechaVal, EstadoRncDGII=@estadoRnc,
+       IdentificadorExtranjero=@idExt, EsExtranjero=@extranjero
  WHERE [Código]=@c;", cn);
 
             cmd.Parameters.Add("@n", SqlDbType.NVarChar, 120).Value = c.Nombre;
@@ -366,6 +349,20 @@ UPDATE dbo.Cliente
             pDes.Precision = 5; pDes.Scale = 2;
             pDes.Value = (object?)c.DescuentoPctMax ?? DBNull.Value;
 
+            cmd.Parameters.Add("@razon", SqlDbType.VarChar, 200).Value = (object?)c.RazonSocialFiscal ?? DBNull.Value;
+            cmd.Parameters.Add("@nomCom", SqlDbType.VarChar, 200).Value = (object?)c.NombreComercialFiscal ?? DBNull.Value;
+            cmd.Parameters.Add("@tipoId", SqlDbType.TinyInt).Value = (object?)c.TipoIdentificacionFiscal ?? DBNull.Value;
+            cmd.Parameters.Add("@mun", SqlDbType.VarChar, 20).Value = (object?)c.MunicipioCodigo ?? DBNull.Value;
+            cmd.Parameters.Add("@prov", SqlDbType.VarChar, 20).Value = (object?)c.ProvinciaCodigo ?? DBNull.Value;
+            cmd.Parameters.Add("@pais", SqlDbType.VarChar, 10).Value = (object?)c.PaisCodigo ?? DBNull.Value;
+            cmd.Parameters.Add("@correoFiscal", SqlDbType.VarChar, 150).Value = (object?)c.CorreoFiscal ?? DBNull.Value;
+            cmd.Parameters.Add("@contrib", SqlDbType.Bit).Value = c.EsContribuyente;
+            cmd.Parameters.Add("@tipoCliFiscal", SqlDbType.TinyInt).Value = (object?)c.TipoClienteFiscal ?? DBNull.Value;
+            cmd.Parameters.Add("@validado", SqlDbType.Bit).Value = c.ValidadoDGII;
+            cmd.Parameters.Add("@fechaVal", SqlDbType.DateTime).Value = (object?)c.FechaValidacionDGII ?? DBNull.Value;
+            cmd.Parameters.Add("@estadoRnc", SqlDbType.VarChar, 50).Value = (object?)c.EstadoRncDGII ?? DBNull.Value;
+            cmd.Parameters.Add("@idExt", SqlDbType.VarChar, 50).Value = (object?)c.IdentificadorExtranjero ?? DBNull.Value;
+            cmd.Parameters.Add("@extranjero", SqlDbType.Bit).Value = c.EsExtranjero;
             cmd.Parameters.Add("@c", SqlDbType.VarChar, 20).Value = c.Codigo;
 
             cmd.ExecuteNonQuery();
@@ -481,8 +478,8 @@ WHERE c.[RNC_Cedula] = @v;", cn);
                 ClienteId = rd.IsDBNull(0) ? 0 : rd.GetInt32(0),
                 Codigo = rd.IsDBNull(1) ? "" : rd.GetString(1),
                 Nombre = rd.IsDBNull(2) ? "" : rd.GetString(2),
-                CodVendedor = rd.IsDBNull(3) ? null : rd.GetString(3),
-                RncCedula = rd.IsDBNull(4) ? null : rd.GetString(4),
+                CodVendedor = null,
+                RncCedula = rd.IsDBNull(3) ? null : rd.GetString(3),
             };
         }
 
@@ -498,6 +495,47 @@ WHERE c.[RNC_Cedula] = @v;", cn);
 
             var doc = sb.ToString();
             return string.IsNullOrWhiteSpace(doc) ? null : doc;
+        }
+
+        private static Cliente MapCliente(SqlDataReader rd)
+        {
+            return new Cliente
+            {
+                Codigo = rd.IsDBNull(0) ? "" : Convert.ToString(rd.GetValue(0)) ?? "",
+                Nombre = rd.IsDBNull(1) ? "" : Convert.ToString(rd.GetValue(1)) ?? "",
+                RncCedula = rd.IsDBNull(2) ? null : Convert.ToString(rd.GetValue(2)),
+                Telefono = rd.IsDBNull(3) ? null : Convert.ToString(rd.GetValue(3)),
+                Email = rd.IsDBNull(4) ? null : Convert.ToString(rd.GetValue(4)),
+                Direccion = rd.IsDBNull(5) ? null : Convert.ToString(rd.GetValue(5)),
+
+                Tipo = rd.IsDBNull(6) ? (byte)0 : Convert.ToByte(rd.GetValue(6)),
+                Estado = rd.IsDBNull(7) ? (byte)1 : Convert.ToByte(rd.GetValue(7)),
+                FechaCreacion = rd.IsDBNull(8) ? (DateTime?)null : Convert.ToDateTime(rd.GetValue(8)),
+                CreditoMaximo = rd.IsDBNull(9) ? (decimal?)null : Convert.ToDecimal(rd.GetValue(9)),
+                CodDivisas = rd.IsDBNull(10) ? null : Convert.ToString(rd.GetValue(10)),
+                CodTerminoPagos = rd.IsDBNull(11) ? null : Convert.ToString(rd.GetValue(11)),
+                CodVendedor = rd.IsDBNull(12) ? null : Convert.ToString(rd.GetValue(12)),
+                CodAlmacen = rd.IsDBNull(13) ? null : Convert.ToString(rd.GetValue(13)),
+                ClienteId = rd.IsDBNull(14) ? 0 : Convert.ToInt32(rd.GetValue(14)),
+                DescuentoPctMax = rd.IsDBNull(15) ? (decimal?)null : Convert.ToDecimal(rd.GetValue(15)),
+
+                RazonSocialFiscal = rd.FieldCount > 16 && !rd.IsDBNull(16) ? Convert.ToString(rd.GetValue(16)) : null,
+                NombreComercialFiscal = rd.FieldCount > 17 && !rd.IsDBNull(17) ? Convert.ToString(rd.GetValue(17)) : null,
+                TipoIdentificacionFiscal = rd.FieldCount > 18 && !rd.IsDBNull(18)
+    ? Convert.ToByte(rd.GetValue(18))
+    : null,
+                MunicipioCodigo = rd.FieldCount > 19 && !rd.IsDBNull(19) ? Convert.ToString(rd.GetValue(19)) : null,
+                ProvinciaCodigo = rd.FieldCount > 20 && !rd.IsDBNull(20) ? Convert.ToString(rd.GetValue(20)) : null,
+                PaisCodigo = rd.FieldCount > 21 && !rd.IsDBNull(21) ? Convert.ToString(rd.GetValue(21)) : null,
+                CorreoFiscal = rd.FieldCount > 22 && !rd.IsDBNull(22) ? Convert.ToString(rd.GetValue(22)) : null,
+                EsContribuyente = rd.FieldCount > 23 && !rd.IsDBNull(23) && Convert.ToBoolean(rd.GetValue(23)),
+                TipoClienteFiscal = rd.FieldCount > 24 && !rd.IsDBNull(24) ? Convert.ToByte(rd.GetValue(24)) : null,
+                ValidadoDGII = rd.FieldCount > 25 && !rd.IsDBNull(25) && Convert.ToBoolean(rd.GetValue(25)),
+                FechaValidacionDGII = rd.FieldCount > 26 && !rd.IsDBNull(26) ? Convert.ToDateTime(rd.GetValue(26)) : null,
+                EstadoRncDGII = rd.FieldCount > 27 && !rd.IsDBNull(27) ? Convert.ToString(rd.GetValue(27)) : null,
+                IdentificadorExtranjero = rd.FieldCount > 28 && !rd.IsDBNull(28) ? Convert.ToString(rd.GetValue(28)) : null,
+                EsExtranjero = rd.FieldCount > 29 && !rd.IsDBNull(29) && Convert.ToBoolean(rd.GetValue(29))
+            };
         }
     }
 }

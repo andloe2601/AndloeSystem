@@ -11,7 +11,7 @@ namespace Presentation
     public partial class FormPOS : Form
     {
         private readonly PosService _pos = new();
-        private readonly TerminoPagoService _terminoPagoService = new();
+       // private readonly TerminoPagoService _terminoPagoService = new();
         private readonly bool _puedeCerrarCaja;
 
         // Datos de contexto POS
@@ -673,10 +673,10 @@ namespace Presentation
         {
             try
             {
-                var lista = _terminoPagoService.ListarActivos();
+               // var lista = _terminoPagoService.ListarActivos();
                 cboTerminoPago.DisplayMember = "Descripcion";
                 cboTerminoPago.ValueMember = "TerminoPagoId";
-                cboTerminoPago.DataSource = lista;
+              //  cboTerminoPago.DataSource = lista;
 
                 cboTerminoPago.SelectedValue = 1;
                 cboTerminoPago.Enabled = false;

@@ -28,8 +28,6 @@ namespace Andloe.Logica
             _repo.Actualizar(t);
         }
 
-        public void CambiarEstado(int id, bool activo) => _repo.CambiarEstado(id, activo);
-
         private void Validar(TerminoPago t, bool esNuevo)
         {
             if (string.IsNullOrWhiteSpace(t.Codigo))
@@ -41,9 +39,6 @@ namespace Andloe.Logica
             if (t.DiasPlazo < 0)
                 throw new InvalidOperationException("Los días de plazo no pueden ser negativos.");
 
-            // ✅ Regla plan:
-            // - Si DiasPlazo > 0 => 1 cuota (vence a DiasPlazo)
-            // - Si DiasPlazo == 0 => debe tener CantCuotas > 0 (si quieres cuotas)
             if (t.DiasPlazo > 0)
             {
                 t.CantCuotas = null;
@@ -62,6 +57,7 @@ namespace Andloe.Logica
             {
                 if (!t.PorcDescuento.HasValue || t.PorcDescuento.Value <= 0)
                     throw new InvalidOperationException("Debe indicar un porcentaje de descuento mayor a 0.");
+
                 if (!t.DiasDescuento.HasValue || t.DiasDescuento.Value <= 0)
                     throw new InvalidOperationException("Debe indicar los días de descuento mayores a 0.");
             }
