@@ -158,5 +158,10 @@ WHERE Codigo = @c;", cn);
             cmd.Parameters.Add("@c", SqlDbType.VarChar, 20).Value = codigo.Trim();
             cmd.ExecuteNonQuery();
         }
+
+        public List<Vendedor> ListarActivos()
+        {
+            return Listar(null, 200, incluirInactivos: false);
+        }
     }
 }

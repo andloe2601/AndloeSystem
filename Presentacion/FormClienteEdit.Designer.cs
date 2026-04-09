@@ -24,6 +24,9 @@ namespace Andloe.Presentacion
         private TextBox txtAlmacen;
         private NumericUpDown numDescuentoMaximo;
         private ComboBox cboTerminoPago;
+        private ComboBox cboMoneda;
+        private ComboBox cboVendedor;
+        private ComboBox cboAlmacen;
         private TextBox txtRazonFiscal;
         private TextBox txtNombreComercialFiscal;
         private ComboBox cboTipoIdentificacion;
@@ -40,6 +43,9 @@ namespace Andloe.Presentacion
         private CheckBox chkEsExtranjero;
         private Button btnValidarDgii;
         private TextBox txtEstadoFiscal;
+        private ComboBox cboProvincia;
+        private ComboBox cboMunicipio;
+        private ComboBox cboPais;
 
         private TabControl tabs;
         private TabPage tabComercial;
@@ -75,6 +81,12 @@ namespace Andloe.Presentacion
             txtAlmacen = new TextBox();
             numDescuentoMaximo = new NumericUpDown();
             cboTerminoPago = new ComboBox();
+            cboProvincia = new ComboBox();
+            cboMunicipio = new ComboBox();
+            cboMoneda = new ComboBox();
+            cboPais = new ComboBox();
+            cboVendedor = new ComboBox();
+            cboAlmacen = new ComboBox();
             txtRazonFiscal = new TextBox();
             txtNombreComercialFiscal = new TextBox();
             cboTipoIdentificacion = new ComboBox();
@@ -112,8 +124,8 @@ namespace Andloe.Presentacion
 
             txtCodigo.ReadOnly = true;
             AgregarFila(comercial, ref rowC, "Código", txtCodigo, readOnly: true);
-            AgregarFila(comercial, ref rowC, "Nombre", txtNombre);
-            AgregarFila(comercial, ref rowC, "RNC/Cédula", txtRnc);
+            AgregarFila(comercial, ref rowC, "Nombre / Razón comercial *", txtNombre);
+            AgregarFila(comercial, ref rowC, "RNC / Cédula *", txtRnc);
             AgregarFila(comercial, ref rowC, "Teléfono", txtTel);
             AgregarFila(comercial, ref rowC, "Email", txtEmail);
             AgregarFila(comercial, ref rowC, "Dirección", txtDir, multiline: true);
@@ -129,14 +141,17 @@ namespace Andloe.Presentacion
             numCreditoMaximo.ThousandsSeparator = true;
             AgregarFila(comercial, ref rowC, "Crédito máximo", numCreditoMaximo);
 
-            AgregarFila(comercial, ref rowC, "Divisa", txtDivisa);
+            cboMoneda.DropDownStyle = ComboBoxStyle.DropDownList;
+            AgregarFila(comercial, ref rowC, "Divisa *", cboMoneda);
 
             cboTerminoPago.DropDownStyle = ComboBoxStyle.DropDownList;
-            AgregarFila(comercial, ref rowC, "Término pago", cboTerminoPago);
-            AgregarFila(comercial, ref rowC, "Código término", txtTermino, readOnly: true);
+            AgregarFila(comercial, ref rowC, "Término de pago *", cboTerminoPago);
 
-            AgregarFila(comercial, ref rowC, "Vendedor", txtVendedor);
-            AgregarFila(comercial, ref rowC, "Almacén", txtAlmacen);
+            cboVendedor.DropDownStyle = ComboBoxStyle.DropDownList;
+            AgregarFila(comercial, ref rowC, "Vendedor", cboVendedor);
+
+            cboAlmacen.DropDownStyle = ComboBoxStyle.DropDownList;
+            AgregarFila(comercial, ref rowC, "Almacén", cboAlmacen);
 
             numDescuentoMaximo.DecimalPlaces = 2;
             numDescuentoMaximo.Maximum = 100;
@@ -149,15 +164,20 @@ namespace Andloe.Presentacion
             var fiscal = CrearGridBase();
             int rowF = 0;
 
-            AgregarFila(fiscal, ref rowF, "Razón social fiscal", txtRazonFiscal);
+            AgregarFila(fiscal, ref rowF, "Razón social fiscal *", txtRazonFiscal);
             AgregarFila(fiscal, ref rowF, "Nombre comercial fiscal", txtNombreComercialFiscal);
 
             cboTipoIdentificacion.DropDownStyle = ComboBoxStyle.DropDownList;
-            AgregarFila(fiscal, ref rowF, "Tipo identificación", cboTipoIdentificacion);
+            AgregarFila(fiscal, ref rowF, "Tipo identificación fiscal *", cboTipoIdentificacion);
 
-            AgregarFila(fiscal, ref rowF, "Provincia", txtProvinciaCodigo);
-            AgregarFila(fiscal, ref rowF, "Municipio", txtMunicipioCodigo);
-            AgregarFila(fiscal, ref rowF, "País", txtPaisCodigo);
+            cboProvincia.DropDownStyle = ComboBoxStyle.DropDownList;
+            AgregarFila(fiscal, ref rowF, "Provincia *", cboProvincia);
+
+            cboMunicipio.DropDownStyle = ComboBoxStyle.DropDownList;
+            AgregarFila(fiscal, ref rowF, "Municipio *", cboMunicipio);
+
+            cboPais.DropDownStyle = ComboBoxStyle.DropDownList;
+            AgregarFila(fiscal, ref rowF, "País *", cboPais);
             AgregarFila(fiscal, ref rowF, "Correo fiscal", txtCorreoFiscal);
 
             chkEsContribuyente.Text = "Es contribuyente";
@@ -167,7 +187,7 @@ namespace Andloe.Presentacion
             AgregarFila(fiscal, ref rowF, "Tipo cliente fiscal", cboTipoClienteFiscal);
 
             chkValidadoDgii.Text = "Validado DGII";
-            AgregarFila(fiscal, ref rowF, "Validación DGII", chkValidadoDgii);
+            AgregarFila(fiscal, ref rowF, "DGII validado *", chkValidadoDgii);
 
             dtpFechaValidacion.Format = DateTimePickerFormat.Short;
             dtpFechaValidacion.ShowCheckBox = true;
@@ -181,7 +201,7 @@ namespace Andloe.Presentacion
             AgregarFila(fiscal, ref rowF, "Identificador extranjero", txtIdentificadorExtranjero);
 
             btnValidarDgii.Text = "Validar DGII";
-            AgregarFila(fiscal, ref rowF, "Consulta", btnValidarDgii);
+            AgregarFila(fiscal, ref rowF, "Consulta DGII", btnValidarDgii);
 
             tabFiscal.Controls.Add(fiscal);
 
@@ -226,7 +246,6 @@ namespace Andloe.Presentacion
             // 
             txtDir.Location = new Point(0, 0);
             txtDir.Name = "txtDir";
-            AgregarFila(comercial, ref rowC, "Dirección", txtDir, multiline: true);
             txtDir.TabIndex = 0;
             // 
             // cboTipo
@@ -436,6 +455,7 @@ namespace Andloe.Presentacion
             txtEstadoFiscal.Location = new Point(173, 11);
             txtEstadoFiscal.Name = "txtEstadoFiscal";
             txtEstadoFiscal.ReadOnly = true;
+            txtEstadoFiscal.BorderStyle = BorderStyle.FixedSingle;
             txtEstadoFiscal.Size = new Size(708, 23);
             txtEstadoFiscal.TabIndex = 1;
             // 

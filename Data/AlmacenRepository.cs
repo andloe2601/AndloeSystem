@@ -2,24 +2,19 @@
 using System.Collections.Generic;
 using System.Data;
 using Microsoft.Data.SqlClient;
+using Andloe.Entidad;
 
 namespace Andloe.Data
 {
     public class AlmacenRepository
     {
-        public class AlmacenSimple
+        public List<Almacen> ListarActivos()
         {
-            public int AlmacenId { get; set; }
-            public string Nombre { get; set; } = "";
-        }
-
-        public List<AlmacenSimple> ListarActivos()
-        {
-            var lista = new List<AlmacenSimple>();
+            var lista = new List<Almacen>();
 
             using var cn = Db.GetOpenConnection();
             using var cmd = new SqlCommand(@"
-SELECT AlmacenId, Nombre
+SELECT AlmacenId, SucursalId, Codigo, Nombre, Estado, EmpresaId
 FROM dbo.Almacen
 WHERE Estado = 1
 ORDER BY Nombre;", cn);
@@ -27,25 +22,29 @@ ORDER BY Nombre;", cn);
             using var rd = cmd.ExecuteReader();
             while (rd.Read())
             {
-                lista.Add(new AlmacenSimple
+                lista.Add(new Almacen
                 {
                     AlmacenId = rd.GetInt32(0),
-                    Nombre = rd.GetString(1)
+                    SucursalId = rd.GetInt32(1),
+                    Codigo = rd.GetString(2),
+                    Nombre = rd.GetString(3),
+                    Estado = rd.GetBoolean(4),
+                    EmpresaId = rd.GetInt32(5)
                 });
             }
 
             return lista;
         }
-    
-     public string? ObtenerNombre(int almacenId)
+
+        public string? ObtenerNombrePorCodigo(string codigo)
         {
             using var cn = Db.GetOpenConnection();
             using var cmd = new SqlCommand(@"
 SELECT TOP 1 Nombre
 FROM dbo.Almacen
-WHERE AlmacenId = @id;", cn);
+WHERE Codigo = @codigo;", cn);
 
-            cmd.Parameters.Add("@id", SqlDbType.Int).Value = almacenId;
+            cmd.Parameters.Add("@codigo", SqlDbType.VarChar, 20).Value = codigo;
 
             var val = cmd.ExecuteScalar();
             if (val == null || val == DBNull.Value) return null;

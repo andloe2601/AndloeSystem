@@ -1,23 +1,33 @@
-﻿using Microsoft.Data.SqlClient;
-using System.Data;
+﻿using System.Collections.Generic;
+using Microsoft.Data.SqlClient;
+using Andloe.Entidad;
 
 namespace Andloe.Data
 {
     public sealed class ProvinciaRepository
     {
-        public DataTable Listar()
+        public List<Provincia> Listar()
         {
+            var list = new List<Provincia>();
+
             using var cn = Db.GetOpenConnection();
             using var cmd = new SqlCommand(@"
-SELECT ProvinciaId, Nombre
+SELECT ProvinciaId, CodigoProvincia, Nombre
 FROM dbo.Provincia
 ORDER BY Nombre;", cn);
 
-            var dt = new DataTable();
-            dt.Load(cmd.ExecuteReader());
-            return dt;
+            using var rd = cmd.ExecuteReader();
+            while (rd.Read())
+            {
+                list.Add(new Provincia
+                {
+                    ProvinciaId = rd.GetInt32(0),
+                    CodigoProvincia = rd.GetString(1),
+                    Nombre = rd.GetString(2)
+                });
+            }
+
+            return list;
         }
-
-
     }
 }

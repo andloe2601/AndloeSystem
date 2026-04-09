@@ -20,7 +20,7 @@ namespace Andloe.Presentacion
             Shown += (_, __) => Cargar();
         }
 
-        private void Cargar()
+        public void Cargar()
         {
             try
             {
@@ -45,6 +45,22 @@ namespace Andloe.Presentacion
             }
         }
 
+        private void AbrirEditor(string? codigo)
+        {
+            var principal = FormPrincipal.Instancia;
+            if (principal == null)
+            {
+                MessageBox.Show(
+                    "No se encontró la ventana principal del sistema.",
+                    "Clientes",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Warning);
+                return;
+            }
+
+            principal.OpenChild(new FormClienteEdit(codigo));
+        }
+
         private string? GetCodigoActual()
         {
             if (grid.CurrentRow == null) return null;
@@ -53,18 +69,15 @@ namespace Andloe.Presentacion
 
         private void Crear()
         {
-            using var frm = new FormClienteEdit(null);
-            if (frm.ShowDialog(this) == DialogResult.OK)
-                Cargar();
+            AbrirEditor(null);
         }
 
         private void EditarActual()
         {
             var cod = GetCodigoActual();
             if (string.IsNullOrWhiteSpace(cod)) return;
-            using var frm = new FormClienteEdit(cod);
-            if (frm.ShowDialog(this) == DialogResult.OK)
-                Cargar();
+
+            AbrirEditor(cod);
         }
 
         private void EliminarActual()

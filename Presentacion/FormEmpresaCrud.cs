@@ -84,7 +84,7 @@ namespace Andloe.Presentacion
         {
             cbMunicipio.DisplayMember = "Nombre";
             cbMunicipio.ValueMember = "MunicipioId";
-            cbMunicipio.DataSource = _munRepo.ListarPorProvincia(provinciaId);
+            cbMunicipio.DataSource = _munRepo.ListarPorProvincia(provinciaId.ToString());
         }
 
         private void cbProvincia_SelectedIndexChanged(object? sender, EventArgs e)
