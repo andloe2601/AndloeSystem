@@ -16,16 +16,19 @@ using System.Globalization;
 using System.Linq;
 using System.Windows.Forms;
 
+
 namespace Andloe.Presentacion
 {
     public partial class FormFacturaV : Form
     {
         private readonly FacturaRepository _facRepo = new();
         private readonly ProductoRepository _prodRepo = new();
-        //private readonly TerminoPagoRepository _tpRepo = new();
+        private readonly TerminoPagoRepository _tpRepo = new();
         private readonly DgiiRncRepository _dgiiRepo = new();
         private readonly ClienteRepository _cliRepo = new();
         private readonly VendedorRepository _vendRepo = new();
+        private ClienteDto? _clienteActual;
+        private string _estadoDoc = "";
 
         private bool _autoNuevo = false;
         private string _autoTipo = FacturaRepository.TIPO_COT;
@@ -38,6 +41,10 @@ namespace Andloe.Presentacion
 
         private bool _gridInternalUpdate = false;
         private bool _isEmbedded = false;
+
+        private bool _warningHeaderOnce = false;
+        private readonly System.Windows.Forms.Timer _clienteSearchTimer = new System.Windows.Forms.Timer();
+        private bool _openingClienteSearch = false;
 
         private readonly System.Windows.Forms.Timer _autoSaveTimer = new System.Windows.Forms.Timer();
         private bool _pendingAutoSave = false;
@@ -54,9 +61,7 @@ namespace Andloe.Presentacion
         private DateTime _lastGridErrorLog = DateTime.MinValue;
 
         // ✅ Cabecera / Comprobante Fiscal
-        // 🔥 NUEVO: Siempre TRUE (solo ComboBox, sin botón)
         private bool _esComprobanteFiscal = true;
-        private bool _warningHeaderOnce = false;
 
         // ✅ Consumidor Final por defecto (C-000001)
         private const string CLIENTE_CONSUMIDOR_FINAL_CODIGO = "C-000001";
@@ -84,7 +89,6 @@ namespace Andloe.Presentacion
             AplicarReglasUI();
 
             _lastTipoPermitido = GetTipoDocUI();
-            RefrescarEstadoBotonesAccion();
         }
 
         public FormFacturaV(int facturaId) : this()
@@ -116,9 +120,11 @@ namespace Andloe.Presentacion
 
             // ✅ asegura que quede bien apenas abre
             ActualizarEstadoComprobante();
+            AplicarEstadoFiscalVisual();
 
             grid.Focus();
         }
+
 
         protected override void OnParentChanged(EventArgs e)
         {
@@ -137,7 +143,7 @@ namespace Andloe.Presentacion
 
             base.OnFormClosed(e);
         }
-
+         
         // ============================================================
         // AUTO SAVE
         // ============================================================
@@ -146,16 +152,13 @@ namespace Andloe.Presentacion
             _autoSaveTimer.Interval = 900;
             _autoSaveTimer.Tick += AutoSaveTimer_Tick;
 
-            cboTipoDoc.SelectedValueChanged += (_, __) =>
-            {
-                if (_cargando) return;
-                AplicarReglasUI();
-                RefrescarEstadoBotonesAccion();
-            };
+           
 
-            chkCredito.CheckedChanged += (_, __) => { AplicarReglasUI(); ScheduleAutoSave(); };
-            cboTerminoPago.SelectedValueChanged += (_, __) => ScheduleAutoSave();
-            txtDiasCredito.TextChanged += (_, __) => ScheduleAutoSave();
+          
+            txtDiasCredito.TextChanged += (_, __) =>
+            {
+                ScheduleAutoSave();
+            };
             dtpFechaDoc.ValueChanged += (_, __) => ScheduleAutoSave();
 
             cboVendedor.SelectedValueChanged += (_, __) =>
@@ -173,7 +176,13 @@ namespace Andloe.Presentacion
                 ScheduleAutoSave();
             };
 
-            txtClienteNombre.TextChanged += (_, __) => { _warningHeaderOnce = false; };
+
+
+            txtClienteNombre.TextChanged += (_, __) =>
+            {
+                _warningHeaderOnce = false;
+                AplicarEstadoFiscalVisual();
+            };
 
             // ✅ Regla final: E32 por defecto, E31 si hay RNC, vuelve a E32 si se borra
             txtClienteRnc.TextChanged += (_, __) =>
@@ -182,14 +191,26 @@ namespace Andloe.Presentacion
                 _warningHeaderOnce = false;
 
                 ActualizarEstadoComprobante();
+                AplicarEstadoFiscalVisual();
                 ScheduleAutoSave();
             };
 
-            txtClienteDireccion.TextChanged += (_, __) => { _warningHeaderOnce = false; };
-            cboTipoComprobante.SelectedValueChanged += (_, __) => { _warningHeaderOnce = false; };
-        }
+            txtClienteDireccion.TextChanged += (_, __) =>
+            {
+                _warningHeaderOnce = false;
+                AplicarEstadoFiscalVisual();
+            };
 
-        private void AutoSaveTimer_Tick(object? sender, EventArgs e)
+            cboTipoComprobante.SelectedValueChanged += (_, __) =>
+            {
+                _warningHeaderOnce = false;
+                AplicarEstadoFiscalVisual();
+            };
+        }
+    
+
+
+private void AutoSaveTimer_Tick(object? sender, EventArgs e)
         {
             _autoSaveTimer.Stop();
             if (_pendingAutoSave) AutoSaveNow();
@@ -239,6 +260,7 @@ namespace Andloe.Presentacion
                 }
 
                 _facRepo.SetCreditoBorrador(_facturaId, chkCredito.Checked, terminoPagoId, diasCredito);
+                _facRepo.SetFechaVencimientoBorrador(_facturaId, CalcularFechaLimitePagoUI());
                 _facRepo.SetDireccionCliente(_facturaId, txtClienteDireccion.Text);
 
                 InsertarFilasNuevasSiExisten();
@@ -324,7 +346,8 @@ namespace Andloe.Presentacion
         // ============================================================
         // ✅ DGII PRO HELPERS / VALIDATION
         // ============================================================
-        private static string SoloDigitos(string? s)
+
+           private static string SoloDigitos(string? s)
         {
             if (string.IsNullOrWhiteSpace(s)) return "";
             return new string(s.Where(char.IsDigit).ToArray());
@@ -347,25 +370,59 @@ namespace Andloe.Presentacion
         {
             if (!_esComprobanteFiscal) return;
 
+            AplicarEstadoFiscalVisual();
+
             var prefijo = (Convert.ToString(cboTipoComprobante.SelectedValue) ?? "")
                 .Trim().ToUpperInvariant();
 
             if (string.IsNullOrWhiteSpace(prefijo))
-                throw new InvalidOperationException("Debe seleccionar el tipo de comprobante (E31/E32/E34).");
+                throw new InvalidOperationException("Debe seleccionar el tipo de comprobante (E31/E32/E45).");
 
-            // Consumidor Final => SOLO E32
             if (EsConsumidorFinal())
             {
                 if (prefijo != "E32")
                     throw new InvalidOperationException("Consumidor final debe facturarse con e-Factura de Consumo (E32).");
-                return; // E32 permite sin RNC
+                return;
             }
 
-            // Cliente con doc => validar doc si el tipo lo requiere
-            if (prefijo == "E31" || prefijo == "E34" || prefijo == "E45")
+            if (_clienteActual == null)
+                throw new InvalidOperationException("Debe seleccionar un cliente válido antes de generar el e-CF.");
+
+            if (prefijo == "E31" || prefijo == "E45")
             {
-                if (!DocValidoRncOCedula(txtClienteRnc.Text))
-                    throw new InvalidOperationException("RNC/Cédula inválido. Debe tener 9 (RNC) o 11 (Cédula) dígitos.");
+                if (string.IsNullOrWhiteSpace(_clienteActual.RncCedula))
+                    throw new InvalidOperationException("El cliente no tiene RNC/Cédula.");
+
+                var doc = SoloDigitos(_clienteActual.RncCedula);
+                if (doc.Length is not (9 or 11))
+                    throw new InvalidOperationException("El RNC/Cédula del cliente debe tener 9 o 11 dígitos.");
+
+                if (string.IsNullOrWhiteSpace(_clienteActual.RazonSocialFiscal))
+                    throw new InvalidOperationException("El cliente no tiene razón social fiscal.");
+
+                if (!_clienteActual.EsExtranjero)
+                {
+                    if (string.IsNullOrWhiteSpace(_clienteActual.ProvinciaCodigo))
+                        throw new InvalidOperationException("El cliente no tiene provincia fiscal.");
+
+                    if (string.IsNullOrWhiteSpace(_clienteActual.MunicipioCodigo))
+                        throw new InvalidOperationException("El cliente no tiene municipio fiscal.");
+
+                    if (string.IsNullOrWhiteSpace(_clienteActual.PaisCodigo))
+                        throw new InvalidOperationException("El cliente no tiene país fiscal.");
+
+                    if (!_clienteActual.ValidadoDGII)
+                        throw new InvalidOperationException("El cliente no está validado en DGII.");
+                }
+                else
+                {
+                    if (string.IsNullOrWhiteSpace(_clienteActual.IdentificadorExtranjero))
+                        throw new InvalidOperationException("El cliente extranjero no tiene identificador extranjero.");
+
+                    if (string.IsNullOrWhiteSpace(_clienteActual.PaisCodigo))
+                        throw new InvalidOperationException("El cliente extranjero no tiene país.");
+                }
+
             }
         }
 
@@ -541,6 +598,7 @@ namespace Andloe.Presentacion
                         "Validación", MessageBoxButtons.OK, MessageBoxIcon.Information);
 
                     AplicarReglasUI();
+                    AplicarEstadoFiscalVisual();
                     RefrescarEstadoBotonesAccion();
                     return;
                 }
@@ -565,7 +623,13 @@ namespace Andloe.Presentacion
                     _autoSaveTimer.Stop();
                 }
 
+
+
+
+
+
                 AplicarReglasUI();
+                AplicarEstadoFiscalVisual();
                 RefrescarEstadoBotonesAccion();
             };
 
@@ -606,20 +670,111 @@ namespace Andloe.Presentacion
                 }
             };
 
-            btnRegistrarFactura.Click += (_, __) => RegistrarFactura();
+            btnBuscarCliente.Click += (_, __) =>
+            {
+                var filtro = (txtClienteBuscar.Text ?? "").Trim();
 
-            btnBuscarCliente.Click += (_, __) => BuscarYSetCliente();
+                if (string.IsNullOrWhiteSpace(filtro))
+                {
+                    BuscarClienteDesdeVentana(null);
+                    return;
+                }
+
+                var cli = _cliRepo.BuscarPorCodigoORnc(filtro);
+                if (cli != null && cli.ClienteId > 0)
+                {
+                    BuscarYSetCliente();
+                    return;
+                }
+
+                BuscarClienteDesdeVentana(filtro);
+            };
+
             txtClienteBuscar.KeyDown += (_, e) =>
             {
                 if (e.KeyCode == Keys.Enter)
                 {
                     e.SuppressKeyPress = true;
-                    BuscarYSetCliente();
+
+                    var filtro = (txtClienteBuscar.Text ?? "").Trim();
+
+                    if (string.IsNullOrWhiteSpace(filtro))
+                    {
+                        BuscarClienteDesdeVentana(null);
+                        return;
+                    }
+
+                    var cli = _cliRepo.BuscarPorCodigoORnc(filtro);
+                    if (cli != null && cli.ClienteId > 0)
+                    {
+                        BuscarYSetCliente();
+                        return;
+                    }
+
+                    BuscarClienteDesdeVentana(filtro);
                 }
+            };
+
+            _clienteSearchTimer.Interval = 500;
+            _clienteSearchTimer.Tick += (_, __) =>
+            {
+                _clienteSearchTimer.Stop();
+
+                if (_cargando || _finalizada) return;
+                if (_openingClienteSearch) return;
+                if (ActiveControl != txtClienteBuscar) return;
+
+                var filtro = (txtClienteBuscar.Text ?? "").Trim();
+                if (filtro.Length < 3) return;
+
+                var cli = _cliRepo.BuscarPorCodigoORnc(filtro);
+                if (cli != null && cli.ClienteId > 0) return;
+
+                BuscarClienteDesdeVentana(filtro);
+            };
+
+            txtClienteBuscar.TextChanged += (_, __) =>
+            {
+                if (_cargando || _finalizada) return;
+                if (_openingClienteSearch) return;
+
+                var filtro = (txtClienteBuscar.Text ?? "").Trim();
+
+                _clienteSearchTimer.Stop();
+
+                if (string.IsNullOrWhiteSpace(filtro) || filtro.Length < 3)
+                    return;
+
+                _clienteSearchTimer.Start();
+            };
+
+            if (txtClienteCodigo != null)
+            {
+                txtClienteCodigo.KeyDown += (_, e) =>
+                {
+                    if (e.KeyCode == Keys.Enter)
+                    {
+                        e.SuppressKeyPress = true;
+                        BuscarClientePorCodigoDesdeTextbox();
+                    }
+                };
+            }
+                                     
+               
+         
+
+            cboTerminoPago.SelectionChangeCommitted += (_, __) =>
+            {
+                if (_finalizada) return;
+                if (!chkCredito.Checked) return;
+
+                AplicarDiasCreditoDesdeTerminoPago();
+                ScheduleAutoSave();
             };
 
             btnGuardar.Click += (_, __) => GuardarBorrador();
             btnFinalizar.Click += (_, __) => FinalizarDocumento(true);
+            btnRegistrarFactura.Click += (_, __) => RegistrarFactura();
 
             btnAnular.Click += (_, __) => AnularDocumento();
 
@@ -630,8 +785,46 @@ namespace Andloe.Presentacion
             chkCredito.CheckedChanged += (_, __) =>
             {
                 if (_finalizada) return;
+
                 cboTerminoPago.Enabled = chkCredito.Checked;
                 txtDiasCredito.Enabled = chkCredito.Checked;
+
+                if (chkCredito.Checked)
+                {
+                    if (cboTerminoPago.Items.Count > 0 && cboTerminoPago.SelectedIndex < 0)
+                        cboTerminoPago.SelectedIndex = 0;
+
+                    AplicarDiasCreditoDesdeTerminoPago();
+
+                    if (!int.TryParse((txtDiasCredito.Text ?? "").Trim(), out var dias) || dias <= 0)
+                        txtDiasCredito.Text = "1";
+                }
+                else
+                {
+                    txtDiasCredito.Text = "";
+                }
+
+                AplicarReglasUI();
+                ScheduleAutoSave();
+            };
+
+            txtDiasCredito.Leave += (_, __) =>
+            {
+                if (_finalizada) return;
+                if (!chkCredito.Checked) return;
+
+                if (!int.TryParse((txtDiasCredito.Text ?? "").Trim(), out var dias) || dias <= 0)
+                {
+                    MessageBox.Show(
+                        "Los días de crédito deben ser mayores que cero.",
+                        "Crédito",
+                        MessageBoxButtons.OK,
+                        MessageBoxIcon.Warning);
+
+                    AplicarDiasCreditoDesdeTerminoPago();
+                    txtDiasCredito.Focus();
+                    txtDiasCredito.SelectAll();
+                }
             };
 
             grid.CurrentCellDirtyStateChanged += (_, __) =>
@@ -787,6 +980,109 @@ namespace Andloe.Presentacion
             catch { }
         }
 
+        private System.Collections.Generic.List<string> ObtenerFaltantesFiscalesFactura()
+        {
+            var faltan = new System.Collections.Generic.List<string>();
+
+            var prefijo = (Convert.ToString(cboTipoComprobante.SelectedValue) ?? "").Trim().ToUpperInvariant();
+            var doc = SoloDigitos(txtClienteRnc.Text);
+
+            if (string.IsNullOrWhiteSpace((txtClienteNombre.Text ?? "").Trim()))
+                faltan.Add("Cliente");
+
+            if (string.IsNullOrWhiteSpace((txtClienteDireccion.Text ?? "").Trim()))
+                faltan.Add("Dirección");
+
+            if (string.IsNullOrWhiteSpace(prefijo))
+                faltan.Add("Tipo comprobante");
+
+            if (EsConsumidorFinal())
+            {
+                if (prefijo != "E32")
+                    faltan.Add("E32");
+                return faltan;
+            }
+
+            if (_clienteActual == null)
+            {
+                faltan.Add("Cliente fiscal");
+                return faltan;
+            }
+
+            if (doc.Length is not (9 or 11))
+                faltan.Add("RNC/Cédula");
+
+            if (string.IsNullOrWhiteSpace(_clienteActual.RazonSocialFiscal))
+                faltan.Add("Razón social");
+
+            if (!_clienteActual.EsExtranjero)
+            {
+                if (string.IsNullOrWhiteSpace(_clienteActual.ProvinciaCodigo))
+                    faltan.Add("Provincia");
+
+                if (string.IsNullOrWhiteSpace(_clienteActual.MunicipioCodigo))
+                    faltan.Add("Municipio");
+
+                if (string.IsNullOrWhiteSpace(_clienteActual.PaisCodigo))
+                    faltan.Add("País");
+
+                if (!_clienteActual.ValidadoDGII)
+                    faltan.Add("DGII");
+            }
+            else
+            {
+                if (string.IsNullOrWhiteSpace(_clienteActual.IdentificadorExtranjero))
+                    faltan.Add("Identificador extranjero");
+
+                if (string.IsNullOrWhiteSpace(_clienteActual.PaisCodigo))
+                    faltan.Add("País");
+            }
+
+            return faltan;
+        }
+
+        private bool ClienteAptoParaEcf()
+        {
+            return ObtenerFaltantesFiscalesFactura().Count == 0;
+        }
+
+        private void AplicarEstadoFiscalVisual()
+        {
+            if (txtEstadoFiscal == null) return;
+
+            var faltan = ObtenerFaltantesFiscalesFactura();
+            var prefijo = (Convert.ToString(cboTipoComprobante.SelectedValue) ?? "").Trim().ToUpperInvariant();
+
+            if (EsConsumidorFinal())
+            {
+                txtEstadoFiscal.Text = prefijo == "E32"
+                    ? "CONSUMIDOR FINAL / APTO PARA E32"
+                    : "CONSUMIDOR FINAL / DEBE USAR E32";
+
+                txtEstadoFiscal.BackColor = prefijo == "E32"
+                    ? Color.LemonChiffon
+                    : Color.MistyRose;
+
+                txtEstadoFiscal.ForeColor = prefijo == "E32"
+                    ? Color.DarkOrange
+                    : Color.DarkRed;
+
+                return;
+            }
+
+            if (faltan.Count == 0)
+            {
+                txtEstadoFiscal.Text = $"CLIENTE APTO PARA {prefijo}";
+                txtEstadoFiscal.BackColor = Color.Honeydew;
+                txtEstadoFiscal.ForeColor = Color.DarkGreen;
+                return;
+            }
+
+            txtEstadoFiscal.Text = "FALTA: " + string.Join(", ", faltan);
+            txtEstadoFiscal.BackColor = Color.MistyRose;
+            txtEstadoFiscal.ForeColor = Color.DarkRed;
+        }
+
         // ============================================================
         // UI RULES
         // ============================================================
@@ -798,7 +1094,7 @@ namespace Andloe.Presentacion
 
         private string GetEstadoUI()
         {
-            return (txtEstadoInfo?.Text ?? "").Trim().ToUpperInvariant();
+            return (_estadoDoc ?? "").Trim().ToUpperInvariant();
         }
 
 
@@ -845,6 +1141,23 @@ namespace Andloe.Presentacion
             SetVendedorUI(codVendedor);
         }
 
+        private void SetClienteCodigoUI(string? codigo)
+        {
+            if (txtClienteCodigo == null) return;
+            txtClienteCodigo.Text = (codigo ?? "").Trim();
+        }
+
+        private void BuscarClientePorCodigoDesdeTextbox()
+        {
+            var codigo = (txtClienteCodigo.Text ?? "").Trim();
+            if (string.IsNullOrWhiteSpace(codigo)) return;
+
+            txtClienteBuscar.Text = codigo;
+            BuscarYSetCliente();
+        }
+
+
+
         private void AplicarReglasUI()
         {
             if (btnRegistrarFactura == null || btnImprimir == null || cboTipoDoc == null) return;
@@ -862,6 +1175,107 @@ namespace Andloe.Presentacion
                 : "Registrar Factura";
 
             RefrescarEstadoBotonesAccion();
+        }
+
+        private void AplicarDiasCreditoDesdeTerminoPago()
+        {
+            if (cboTerminoPago == null) return;
+            if (cboTerminoPago.SelectedItem == null) return;
+
+            try
+            {
+                var propDias = cboTerminoPago.SelectedItem.GetType().GetProperty("Dias");
+                if (propDias == null) return;
+
+                var valor = propDias.GetValue(cboTerminoPago.SelectedItem, null);
+                if (valor == null) return;
+
+                var dias = Convert.ToInt32(valor);
+                txtDiasCredito.Text = dias.ToString();
+            }
+            catch
+            {
+                // no romper flujo si el datasource cambia
+            }
+        }
+
+        private void AplicarCondicionPagoDesdeCliente(ClienteDto? cliente)
+        {
+            if (cliente == null || !cliente.TerminoPagoId.HasValue || cliente.TerminoPagoId.Value <= 0)
+            {
+                chkCredito.Checked = false;
+                cboTerminoPago.SelectedIndex = -1;
+                cboTerminoPago.Enabled = false;
+                txtDiasCredito.Enabled = false;
+                txtDiasCredito.Text = "";
+                return;
+            }
+
+            var terminoPagoId = cliente.TerminoPagoId.Value;
+
+            var itemExiste = false;
+            foreach (var item in cboTerminoPago.Items)
+            {
+                var prop = item.GetType().GetProperty("Value");
+                if (prop == null) continue;
+
+                var val = prop.GetValue(item, null);
+                if (val != null && Convert.ToInt32(val) == terminoPagoId)
+                {
+                    itemExiste = true;
+                    break;
+                }
+            }
+
+            if (!itemExiste)
+            {
+                chkCredito.Checked = false;
+                cboTerminoPago.SelectedIndex = -1;
+                cboTerminoPago.Enabled = false;
+                txtDiasCredito.Enabled = false;
+                txtDiasCredito.Text = "";
+                return;
+            }
+
+            cboTerminoPago.SelectedValue = terminoPagoId;
+            chkCredito.Checked = true;
+            cboTerminoPago.Enabled = !_finalizada;
+            txtDiasCredito.Enabled = !_finalizada;
+
+            AplicarDiasCreditoDesdeTerminoPago();
+
+            if (string.IsNullOrWhiteSpace(txtDiasCredito.Text) || txtDiasCredito.Text == "0")
+                txtDiasCredito.Text = "1";
+        }
+
+        private DateTime? CalcularFechaLimitePagoUI()
+        {
+            if (!chkCredito.Checked) return null;
+
+            if (!int.TryParse((txtDiasCredito.Text ?? "").Trim(), out var dias))
+                dias = 0;
+
+            return dtpFechaDoc.Value.Date.AddDays(dias);
+        }
+
+        private void ValidarCreditoAntesDeGuardar()
+        {
+            if (!chkCredito.Checked) return;
+
+            if (cboTerminoPago.SelectedValue == null)
+                throw new InvalidOperationException("Debe seleccionar un término de pago para facturas a crédito.");
+
+            if (!int.TryParse((txtDiasCredito.Text ?? "").Trim(), out var dias))
+                throw new InvalidOperationException("Debe indicar los días de crédito.");
+
+            if (dias <= 0)
+                throw new InvalidOperationException("Los días de crédito deben ser mayores que cero.");
+
+            var fechaDoc = dtpFechaDoc.Value.Date;
+            var fechaLimite = fechaDoc.AddDays(dias);
+
+            if (fechaLimite.Date < fechaDoc)
+                throw new InvalidOperationException("La fecha límite de pago no puede ser menor que la fecha del documento.");
         }
 
         private void RefrescarEstadoBotonesAccion()
@@ -969,6 +1383,7 @@ namespace Andloe.Presentacion
 
             var tipoActual = GetTipoDocUI();
 
+            // 🖨️ Si ya es factura finalizada → solo imprimir
             if (_finalizada && tipoActual == FacturaRepository.TIPO_FAC)
             {
                 ImprimirFacturaRI();
@@ -977,13 +1392,38 @@ namespace Andloe.Presentacion
 
             try
             {
+               
+                // 🔹 1. Validar crédito y guardar cambios pendientes
+                ValidarCreditoAntesDeGuardar();
+
                 _suppressReload = true;
                 try { GuardarBorrador(); }
                 finally { _suppressReload = false; }
 
+                // 🔹 2. VALIDACIÓN DGII ANTES DE CONVERTIR
+                try
+                {
+                    ValidarDgiiProAntesDeGenerar();
+                }
+                catch (Exception ex)
+                {
+                    AplicarEstadoFiscalVisual();
+
+                    MessageBox.Show(
+                        "No se puede registrar la factura.\n\n" + ex.Message,
+                        "Validación fiscal",
+                        MessageBoxButtons.OK,
+                        MessageBoxIcon.Warning);
+
+                    return;
+                }
+
+                // 🔹 3. Convertir a FACTURA (FAC)
                 if (tipoActual != FacturaRepository.TIPO_FAC)
                 {
-                    var nuevoNumero = _facRepo.ConvertirCotPfAFac_GenerandoNuevoNumero(_facturaId, Environment.UserName);
+                    var nuevoNumero = _facRepo.ConvertirCotPfAFac_GenerandoNuevoNumero(
+                        _facturaId,
+                        Environment.UserName);
 
                     _allowFacProgrammatic = true;
                     _cargando = true;
@@ -995,14 +1435,18 @@ namespace Andloe.Presentacion
                     }
 
                     _tipoDoc = FacturaRepository.TIPO_FAC;
-                    txtNumeroFacturaTop.Text = string.IsNullOrWhiteSpace(nuevoNumero) ? txtNumeroFacturaTop.Text : nuevoNumero;
+
+                    if (!string.IsNullOrWhiteSpace(nuevoNumero))
+                        txtNumeroFacturaTop.Text = nuevoNumero;
                 }
 
-                FinalizarDocumento();
+                // 🔹 4. Finalizar documento
+                FinalizarDocumento(false);
 
-                // 1) generar eNCF si aplica
+                // 🔹 5. Guardar cabecera fiscal
                 GuardarCabeceraFiscalBorrador();
 
+                // 🔹 6. Generar XML e-CF
                 try
                 {
                     ProcesarEcfSiAplica(_facturaId);
@@ -1010,16 +1454,16 @@ namespace Andloe.Presentacion
                 catch (Exception ex)
                 {
                     MessageBox.Show(
-                        $"Factura registrada, pero no se pudo completar el proceso e-CF.\n{ex.Message}",
+                        "Factura registrada, pero falló la generación del e-CF.\n\n" + ex.Message,
                         "e-CF",
                         MessageBoxButtons.OK,
-                        MessageBoxIcon.Warning
-                    );
+                        MessageBoxIcon.Warning);
 
                     ImprimirFacturaRI();
                     return;
                 }
 
+                // 🔹 7. Enviar a Alanube
                 try
                 {
                     EnviarAlanubeSiAplica(_facturaId);
@@ -1027,24 +1471,35 @@ namespace Andloe.Presentacion
                 catch (Exception ex)
                 {
                     MessageBox.Show(
-                        $"Factura registrada y XML generado, pero falló el envío a Alanube.\n{ex.Message}",
-                        "Alanube Sandbox",
+                        "Factura registrada y XML generado, pero falló el envío a Alanube.\n\n" + ex.Message,
+                        "Alanube",
                         MessageBoxButtons.OK,
-                        MessageBoxIcon.Warning
-                    );
+                        MessageBoxIcon.Warning);
 
                     ImprimirFacturaRI();
                     return;
                 }
 
+                // 🔹 8. Éxito total
+                MessageBox.Show(
+                    "Factura electrónica generada y enviada correctamente.",
+                    "Factura",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Information);
+
                 ImprimirFacturaRI();
             }
             catch (Exception ex)
             {
-                MessageBox.Show(ex.Message, "Registrar", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                AplicarEstadoFiscalVisual();
+
+                MessageBox.Show(
+                    "Error general al registrar la factura.\n\n" + ex.Message,
+                    "Factura",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Error);
             }
         }
-
         private string? GenerarENcfSiAplica()
         {
             if (!_esComprobanteFiscal) return null;
@@ -1150,37 +1605,47 @@ namespace Andloe.Presentacion
             cboTipoDoc.ValueMember = "Value";
             cboTipoDoc.DataSource = new[]
             {
-                new { Text = "Cotización",        Value = FacturaRepository.TIPO_COT },
-                new { Text = "Factura Pro-Forma", Value = FacturaRepository.TIPO_PF  },
-                new { Text = "Factura",           Value = FacturaRepository.TIPO_FAC }
-            }.ToList();
+        new { Text = "Cotización",        Value = FacturaRepository.TIPO_COT },
+        new { Text = "Factura Pro-Forma", Value = FacturaRepository.TIPO_PF  },
+        new { Text = "Factura",           Value = FacturaRepository.TIPO_FAC }
+    }.ToList();
 
             cboTipoDoc.SelectedValue = FacturaRepository.TIPO_COT;
 
-           // var tps = _tpRepo.ListarActivos();
-            cboTerminoPago.DisplayMember = "Descripcion";
-            cboTerminoPago.ValueMember = "TerminoPagoId";
-          //  cboTerminoPago.DataSource = tps;
+            var tps = _tpRepo.ListarActivos();
+
+            var lista = tps
+                .Select(x => new
+                {
+                    Text = x.Descripcion,
+                    Value = x.TerminoPagoId,
+                    Dias = x.DiasPlazo
+                })
+                .ToList();
+
+            cboTerminoPago.DisplayMember = "Text";
+            cboTerminoPago.ValueMember = "Value";
+            cboTerminoPago.DataSource = lista;
+
+            if (lista.Count > 0)
+                cboTerminoPago.SelectedIndex = 0;
 
             cboTerminoPago.Enabled = false;
             txtDiasCredito.Enabled = false;
 
-            // ✅ Tipos de comprobante basados en tu BD (31,32,34)
+            // ✅ Tipos de comprobante basados en tu BD
             cboTipoComprobante.DisplayMember = "Text";
             cboTipoComprobante.ValueMember = "Value";
             cboTipoComprobante.DataSource = new[]
             {
-                new { Text = "e-Factura de Crédito Fiscal", Value = "E31" },
-                new { Text = "e-Factura de Consumo",        Value = "E32" },
-                new { Text = "e-Comprobante Gubernamental", Value = "E45" },
+        new { Text = "e-Factura de Crédito Fiscal", Value = "E31" },
+        new { Text = "e-Factura de Consumo",        Value = "E32" },
+        new { Text = "e-Comprobante Gubernamental", Value = "E45" },
+    }.ToList();
 
-            }.ToList();
-
-            // 🔥 Por defecto E32
             cboTipoComprobante.SelectedValue = "E32";
             cboTipoComprobante.Enabled = false;
 
-            // ✅ Vendedores (Catálogo)
             var vendedores = _vendRepo.Listar(null, top: 500, incluirInactivos: false);
             var venDs = vendedores
                 .Select(v => new { Text = $"{v.Codigo} - {v.Nombre}", Value = v.Codigo })
@@ -1256,20 +1721,36 @@ namespace Andloe.Presentacion
                 try
                 {
                     var cf = _cliRepo.ObtenerConsumidorFinal();
+                    _clienteActual = cf;
+
                     _facRepo.SetCliente(_facturaId, cf.ClienteId, cf.Nombre ?? "CONSUMIDOR FINAL", null);
 
                     txtClienteNombre.Text = cf.Nombre ?? "CONSUMIDOR FINAL";
                     txtClienteRnc.Text = "";
                     txtClienteDireccion.Text = "";
+                    SetClienteCodigoUI(cf.Codigo);
+
+                    chkCredito.Checked = false;
+                    cboTerminoPago.Enabled = false;
+                    txtDiasCredito.Enabled = false;
+                    txtDiasCredito.Text = "";
                 }
                 catch (Exception ex)
                 {
                     MessageBox.Show(ex.Message, "Consumidor Final", MessageBoxButtons.OK, MessageBoxIcon.Warning);
 
+                    _clienteActual = null;
+
                     _facRepo.SetCliente(_facturaId, null, "CONSUMIDOR FINAL", null);
                     txtClienteNombre.Text = "CONSUMIDOR FINAL";
                     txtClienteRnc.Text = "";
                     txtClienteDireccion.Text = "";
+                    SetClienteCodigoUI(CLIENTE_CONSUMIDOR_FINAL_CODIGO);
+
+                    chkCredito.Checked = false;
+                    cboTerminoPago.Enabled = false;
+                    txtDiasCredito.Enabled = false;
+                    txtDiasCredito.Text = "";
                 }
 
                 // ✅ Reaplica regla
@@ -1284,6 +1765,7 @@ namespace Andloe.Presentacion
                 grid.Focus();
 
                 _lastTipoPermitido = GetTipoDocUI();
+                AplicarEstadoFiscalVisual();
                 ScheduleAutoSave();
             }
             catch (Exception ex)
@@ -1297,6 +1779,8 @@ namespace Andloe.Presentacion
         // ============================================================
         private void CargarDocumentoDesdeBD(int facturaId)
         {
+                      
+           
             if (facturaId <= 0) return;
 
             var dto = _facRepo.ObtenerCompleta(facturaId);
@@ -1312,17 +1796,60 @@ namespace Andloe.Presentacion
 
                 txtNumeroFacturaTop.Text = string.IsNullOrWhiteSpace(dto.Cab.NumeroDocumento) ? "(sin asignar)" : dto.Cab.NumeroDocumento;
 
-                txtEstadoInfo.Text = dto.Cab.Estado ?? "";
+                _estadoDoc = dto.Cab.Estado ?? "";
+                txtEstadoInfo.Text = _estadoDoc;
                 txtTipoInfo.Text = _tipoDoc ?? "";
 
                 txtClienteNombre.Text = dto.Cab.NombreCliente ?? "";
                 txtClienteDireccion.Text = dto.Cab.DireccionCliente ?? "";
                 txtClienteRnc.Text = dto.Cab.DocumentoCliente ?? "";
 
+
+
+                
+                _clienteActual = null;
+                SetClienteCodigoUI(null);
+
+                var docCliente = (dto.Cab.DocumentoCliente ?? "").Trim();
+                if (!string.IsNullOrWhiteSpace(docCliente))
+                {
+                    try
+                    {
+                        _clienteActual = _cliRepo.BuscarPorCodigoORnc(docCliente);
+                        SetClienteCodigoUI(_clienteActual?.Codigo);
+                    }
+                    catch { }
+                }
+
                 var f = dto.Cab.FechaDocumento;
                 if (f < dtpFechaDoc.MinDate) f = DateTime.Today;
                 if (f > dtpFechaDoc.MaxDate) f = DateTime.Today;
                 dtpFechaDoc.Value = f;
+
+                try
+                {
+                    var fr = dto.Cab.FechaDocumento;
+
+                    if (fr < dtpFechaRegistro.MinDate)
+                        fr = dtpFechaRegistro.MinDate;
+
+                    if (fr > dtpFechaRegistro.MaxDate)
+                        fr = dtpFechaRegistro.MaxDate;
+
+                    dtpFechaRegistro.Value = fr;
+                }
+                catch
+                {
+                    try
+                    {
+                        dtpFechaRegistro.Value = DateTime.Today;
+                    }
+                    catch { }
+                }
+
+
+
+
 
                 _finalizada =
                     string.Equals(dto.Cab.Estado, FacturaRepository.EST_FINALIZADA, StringComparison.OrdinalIgnoreCase)
@@ -1392,6 +1919,7 @@ namespace Andloe.Presentacion
                 RecalcularTotalesDesdeGridUI();
                 AplicarModoEdicion();
                 AplicarReglasUI();
+                AplicarEstadoFiscalVisual();
                 RefrescarEstadoBotonesAccion();
             }
             finally
@@ -1407,6 +1935,8 @@ namespace Andloe.Presentacion
         {
             if (_finalizada) return;
             if (_facturaId <= 0) return;
+
+            ValidarCreditoAntesDeGuardar();
 
             var tipo = GetTipoDocUI();
             _facRepo.SetTipoDocumentoBorrador(_facturaId, tipo);
@@ -1425,6 +1955,7 @@ namespace Andloe.Presentacion
             }
 
             _facRepo.SetCreditoBorrador(_facturaId, chkCredito.Checked, terminoPagoId, diasCredito);
+            _facRepo.SetFechaVencimientoBorrador(_facturaId, CalcularFechaLimitePagoUI());
             _facRepo.SetDireccionCliente(_facturaId, txtClienteDireccion.Text);
             _facRepo.SetCodVendedorBorrador(_facturaId, GetCodVendedorUI());
 
@@ -1540,20 +2071,26 @@ namespace Andloe.Presentacion
                 try
                 {
                     var cf = _cliRepo.ObtenerConsumidorFinal();
+                    _clienteActual = cf;
+
                     AsignarClienteAFactura(cf.ClienteId, cf.Nombre ?? "CONSUMIDOR FINAL", null);
 
                     txtClienteNombre.Text = cf.Nombre ?? "CONSUMIDOR FINAL";
                     txtClienteDireccion.Text = "";
                     txtClienteRnc.Text = "";
+                    SetClienteCodigoUI(cf.Codigo);
                 }
                 catch (Exception ex)
                 {
                     MessageBox.Show(ex.Message, "Consumidor Final", MessageBoxButtons.OK, MessageBoxIcon.Warning);
 
+                    _clienteActual = null;
+
                     _facRepo.SetCliente(_facturaId, null, "CONSUMIDOR FINAL", null);
                     txtClienteNombre.Text = "CONSUMIDOR FINAL";
                     txtClienteDireccion.Text = "";
                     txtClienteRnc.Text = "";
+                    SetClienteCodigoUI(CLIENTE_CONSUMIDOR_FINAL_CODIGO);
                 }
 
                 _facRepo.SetDireccionCliente(_facturaId, null);
@@ -1562,8 +2099,14 @@ namespace Andloe.Presentacion
 
                 txtClienteBuscar.Clear();
 
+                chkCredito.Checked = false;
+                cboTerminoPago.Enabled = false;
+                txtDiasCredito.Enabled = false;
+                txtDiasCredito.Text = "";
+
                 // ✅ Regla final: vuelve a E32
                 ActualizarEstadoComprobante();
+                AplicarEstadoFiscalVisual();
 
                 ScheduleAutoSave();
                 CargarDocumentoDesdeBD(_facturaId);
@@ -1580,13 +2123,32 @@ namespace Andloe.Presentacion
                     txtClienteNombre.Text = cli.Nombre ?? "";
                     txtClienteRnc.Text = cli.RncCedula ?? "";
                     txtClienteDireccion.Text = cli.Direccion ?? "";
+                    SetClienteCodigoUI(cli.Codigo);
+                    _clienteActual = cli;
+
+                    AplicarCondicionPagoDesdeCliente(cli);
 
                     _facRepo.SetDireccionCliente(_facturaId, txtClienteDireccion.Text);
 
-                    // ✅ si la factura no tiene vendedor, usar el del cliente por defecto
+                    try
+                    {
+                        GuardarBorrador();
+                    }
+                    catch { }
+                                       
+
+                    // ✅ usar vendedor del cliente solo si la factura aún no tiene uno
                     SetVendedorSiVacio(cli.CodVendedor);
 
+                    // ✅ guardar el vendedor actual de la factura
+                    try
+                    {
+                        _facRepo.SetCodVendedorBorrador(_facturaId, GetCodVendedorUI());
+                    }
+                    catch { }
+
                     ActualizarEstadoComprobante();
+                    AplicarEstadoFiscalVisual();
 
                     _warningHeaderOnce = false;
 
@@ -1609,26 +2171,120 @@ namespace Andloe.Presentacion
                 }
 
                 var nuevoId = _cliRepo.CrearDesdeDgii(
-                    rnc: rnc,
-                    nombre: dg.Nombre ?? "",
-                    nombreComercial: dg.NombreComercial,
-                    usuario: Environment.UserName
-                );
+    rnc: rnc,
+    nombre: dg.Nombre ?? "",
+    nombreComercial: dg.NombreComercial,
+    usuario: Environment.UserName
+);
 
                 AsignarClienteAFactura(nuevoId, dg.NombreComercial ?? dg.Nombre, rnc);
 
-                txtClienteNombre.Text = dg.NombreComercial ?? dg.Nombre ?? "";
-                txtClienteRnc.Text = rnc;
+                var cliNuevo = _cliRepo.BuscarPorCodigoORnc(rnc);
+                _clienteActual = cliNuevo;
+
+                txtClienteNombre.Text = cliNuevo?.Nombre ?? dg.NombreComercial ?? dg.Nombre ?? "";
+                txtClienteRnc.Text = cliNuevo?.RncCedula ?? rnc;
+                txtClienteDireccion.Text = cliNuevo?.Direccion ?? "";
+                SetClienteCodigoUI(cliNuevo?.Codigo);
                 _warningHeaderOnce = false;
+
+                AplicarCondicionPagoDesdeCliente(cliNuevo);
+
                 _facRepo.SetDireccionCliente(_facturaId, txtClienteDireccion.Text);
 
+                // ✅ si el cliente nuevo tiene vendedor, usarlo solo si la factura está vacía
+                SetVendedorSiVacio(cliNuevo?.CodVendedor);
+
+                // ✅ guardar el vendedor actual de la factura
+                try
+                {
+                    _facRepo.SetCodVendedorBorrador(_facturaId, GetCodVendedorUI());
+                }
+                catch { }
+
                 ActualizarEstadoComprobante();
+                AplicarEstadoFiscalVisual();
 
                 ScheduleAutoSave();
             }
             catch (Exception ex)
             {
                 MessageBox.Show(ex.Message, "Cliente/DGII", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        private void BuscarClienteDesdeVentana()
+        {
+            BuscarClienteDesdeVentana((txtClienteBuscar.Text ?? "").Trim());
+        }
+
+        private void BuscarClienteDesdeVentana(string? filtroInicial)
+        {
+            if (_finalizada) return;
+            if (_facturaId <= 0)
+            {
+                MessageBox.Show(
+                    "Primero crea/abre un documento.",
+                    "Cliente",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Warning);
+                return;
+            }
+
+            if (_openingClienteSearch) return;
+
+            try
+            {
+                _openingClienteSearch = true;
+
+                using var frm = new FormBuscarCliente();
+
+                if (!string.IsNullOrWhiteSpace(filtroInicial))
+                    frm.SetFiltroInicial(filtroInicial);
+
+                if (frm.ShowDialog(this) != DialogResult.OK) return;
+
+                var cli = frm.ClienteSeleccionado;
+                if (cli == null || cli.ClienteId <= 0) return;
+
+                AsignarClienteAFactura(cli.ClienteId, cli.Nombre, cli.RncCedula);
+
+                txtClienteNombre.Text = cli.Nombre ?? "";
+                txtClienteRnc.Text = cli.RncCedula ?? "";
+                txtClienteDireccion.Text = cli.Direccion ?? "";
+                SetClienteCodigoUI(cli.Codigo);
+                _clienteActual = cli;
+
+                AplicarCondicionPagoDesdeCliente(cli);
+
+                _facRepo.SetDireccionCliente(_facturaId, txtClienteDireccion.Text);
+
+                SetVendedorSiVacio(cli.CodVendedor);
+
+                try
+                {
+                    _facRepo.SetCodVendedorBorrador(_facturaId, GetCodVendedorUI());
+                }
+                catch { }
+
+                try
+                {
+                    GuardarBorrador();
+                }
+                catch { }
+
+                ActualizarEstadoComprobante();
+                AplicarEstadoFiscalVisual();
+                _warningHeaderOnce = false;
+                ScheduleAutoSave();
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(ex.Message, "Cliente", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+            finally
+            {
+                _openingClienteSearch = false;
             }
         }
 
@@ -1795,6 +2451,8 @@ namespace Andloe.Presentacion
             {
                 if (_facturaId <= 0) throw new Exception("FacturaId inválido.");
 
+                ValidarCreditoAntesDeGuardar();
+
                 GuardarBorrador();
 
                 int? terminoPagoId = null;
@@ -1843,12 +2501,30 @@ namespace Andloe.Presentacion
 
             dtpFechaDoc.Enabled = !_finalizada;
 
-            // ✅ NO lo fuerces a false aquí; usa la regla central
-            ActualizarEstadoComprobante();
+            txtClienteBuscar.Enabled = !_finalizada;
 
-            if (grid.Columns.Contains("colItbisMonto")) grid.Columns["colItbisMonto"].ReadOnly = true;
-            if (grid.Columns.Contains("colTotalLinea")) grid.Columns["colTotalLinea"].ReadOnly = true;
-            if (grid.Columns.Contains("colDescuentoMonto")) grid.Columns["colDescuentoMonto"].ReadOnly = true;
+            if (txtClienteCodigo != null)
+                txtClienteCodigo.ReadOnly = _finalizada;
+
+            btnBuscarCliente.Enabled = !_finalizada;
+            txtClienteNombre.ReadOnly = _finalizada;
+            txtClienteDireccion.ReadOnly = _finalizada;
+            txtClienteRnc.ReadOnly = _finalizada;
+
+            cboVendedor.Enabled = !_finalizada;
+            cboTipoDoc.Enabled = !_finalizada;
+
+            ActualizarEstadoComprobante();
+            AplicarEstadoFiscalVisual();
+
+            if (grid.Columns.Contains("colItbisMonto"))
+                grid.Columns["colItbisMonto"].ReadOnly = true;
+
+            if (grid.Columns.Contains("colTotalLinea"))
+                grid.Columns["colTotalLinea"].ReadOnly = true;
+
+            if (grid.Columns.Contains("colDescuentoMonto"))
+                grid.Columns["colDescuentoMonto"].ReadOnly = true;
         }
 
         // ============================================================
@@ -1943,6 +2619,13 @@ namespace Andloe.Presentacion
 
         private void FormFacturaV_KeyDown(object? sender, KeyEventArgs e)
         {
+            if (e.KeyCode == Keys.F2)
+            {
+                e.SuppressKeyPress = true;
+                BuscarClienteDesdeVentana();
+                return;
+            }
+
             if (e.Control && e.KeyCode == Keys.N)
             {
                 e.SuppressKeyPress = true;
@@ -2039,6 +2722,7 @@ namespace Andloe.Presentacion
         {
             if (_facturaId <= 0) return;
             if (!_esComprobanteFiscal) return;
+            AplicarEstadoFiscalVisual();
 
             var prefijo = (Convert.ToString(cboTipoComprobante.SelectedValue) ?? "").Trim().ToUpperInvariant();
             if (string.IsNullOrWhiteSpace(prefijo))
@@ -2062,9 +2746,26 @@ namespace Andloe.Presentacion
 
             var resumen = CalcularResumenFiscalDesdeGrid();
 
-            var rncComprador = (txtClienteRnc.Text ?? "").Trim();
-            var razonSocial = (txtClienteNombre.Text ?? "").Trim();
-            var direccion = (txtClienteDireccion.Text ?? "").Trim();
+            var cliente = _clienteActual;
+
+            var rncComprador = (cliente?.RncCedula ?? txtClienteRnc.Text ?? "").Trim();
+            var razonSocial = (
+                cliente?.RazonSocialFiscal
+                ?? cliente?.Nombre
+                ?? txtClienteNombre.Text
+                ?? ""
+            ).Trim();
+
+            var correoFiscal = (cliente?.CorreoFiscal ?? "").Trim();
+            var direccionFiscal = (
+                cliente?.Direccion
+                ?? txtClienteDireccion.Text
+                ?? ""
+            ).Trim();
+
+            var municipio = (cliente?.MunicipioCodigo ?? "").Trim();
+            var provincia = (cliente?.ProvinciaCodigo ?? "").Trim();
+            var identificadorExtranjero = (cliente?.IdentificadorExtranjero ?? "").Trim();
 
             _facRepo.SetDatosFiscalesBorrador(
                 facturaId: _facturaId,
@@ -2077,10 +2778,10 @@ namespace Andloe.Presentacion
                 indicadorMontoGravado: resumen.montoGravado > 0m ? 1 : (int?)null,
                 rncCompradorSnapshot: string.IsNullOrWhiteSpace(rncComprador) ? null : rncComprador,
                 razonSocialCompradorSnapshot: string.IsNullOrWhiteSpace(razonSocial) ? null : razonSocial,
-                correoCompradorSnapshot: null,
-                direccionCompradorSnapshot: string.IsNullOrWhiteSpace(direccion) ? null : direccion,
-                municipioCompradorSnapshot: null,
-                provinciaCompradorSnapshot: null,
+                correoCompradorSnapshot: string.IsNullOrWhiteSpace(correoFiscal) ? null : correoFiscal,
+                direccionCompradorSnapshot: string.IsNullOrWhiteSpace(direccionFiscal) ? null : direccionFiscal,
+                municipioCompradorSnapshot: string.IsNullOrWhiteSpace(municipio) ? null : municipio,
+                provinciaCompradorSnapshot: string.IsNullOrWhiteSpace(provincia) ? null : provincia,
                 montoGravadoTotal: resumen.montoGravado,
                 montoExentoTotal: resumen.montoExento,
                 totalItbisRetenido: 0m,
@@ -2088,10 +2789,10 @@ namespace Andloe.Presentacion
                 totalOtrosImpuestos: 0m,
                 estadoEcf: "PENDIENTE",
                 tipoPagoEcfHeader: tipoPagoEcf,
-                fechaLimitePago: chkCredito.Checked ? dtpFechaDoc.Value.Date.AddDays(int.TryParse(txtDiasCredito.Text, out var d) ? d : 0) : (DateTime?)null,
-                identificadorExtranjeroSnapshot: null
+                fechaLimitePago: CalcularFechaLimitePagoUI(),
+                identificadorExtranjeroSnapshot: string.IsNullOrWhiteSpace(identificadorExtranjero) ? null : identificadorExtranjero
             );
         }
-                
+
     }
 }

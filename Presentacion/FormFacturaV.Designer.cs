@@ -26,6 +26,7 @@ namespace Andloe.Presentacion
         private Panel pnlHeader;
         private Label lblTitle;
         private Label lblSubTitle;
+        private TextBox txtEstadoFiscal;
 
         private Panel pnlTop;
         private Panel pnlMid;
@@ -43,6 +44,8 @@ namespace Andloe.Presentacion
 
         private Label lblClienteN;
         public TextBox txtClienteBuscar;
+        private TextBox txtClienteCodigo;
+        private Label lblClienteCodigo;
         public Button btnBuscarCliente;
 
         private Label lblCliNombre;
@@ -139,6 +142,7 @@ namespace Andloe.Presentacion
         public Label lblItbis;
         public Label lblTotal;
 
+
         protected override void Dispose(bool disposing)
         {
             if (disposing && (components != null))
@@ -194,6 +198,8 @@ namespace Andloe.Presentacion
             lblClienteN = new Label();
             txtClienteBuscar = new TextBox();
             btnBuscarCliente = new Button();
+            lblClienteCodigo = new Label();
+            txtClienteCodigo = new TextBox();
             lblCliNombre = new Label();
             txtClienteNombre = new TextBox();
             lblCliDireccion = new Label();
@@ -234,6 +240,7 @@ namespace Andloe.Presentacion
             pnlHeader = new Panel();
             lblTitle = new Label();
             lblSubTitle = new Label();
+            txtEstadoFiscal = new TextBox();
             lblInfoFacturaId = new Label();
             txtFacturaIdInfo = new TextBox();
             lblInfoEstado = new Label();
@@ -583,18 +590,21 @@ namespace Andloe.Presentacion
             tblLeft.Controls.Add(lblClienteN, 0, 0);
             tblLeft.Controls.Add(txtClienteBuscar, 1, 0);
             tblLeft.Controls.Add(btnBuscarCliente, 2, 0);
-            tblLeft.Controls.Add(lblCliNombre, 0, 1);
-            tblLeft.Controls.Add(txtClienteNombre, 1, 1);
-            tblLeft.Controls.Add(lblCliDireccion, 0, 2);
-            tblLeft.Controls.Add(txtClienteDireccion, 1, 2);
-            tblLeft.Controls.Add(lblCliRnc, 0, 3);
-            tblLeft.Controls.Add(txtClienteRnc, 1, 3);
-            tblLeft.Controls.Add(lblTipoComprobante, 0, 4);
-            tblLeft.Controls.Add(cboTipoComprobante, 1, 4);
+            tblLeft.Controls.Add(lblClienteCodigo, 0, 1);
+            tblLeft.Controls.Add(txtClienteCodigo, 1, 1);
+            tblLeft.Controls.Add(lblCliNombre, 0, 2);
+            tblLeft.Controls.Add(txtClienteNombre, 1, 2);
+            tblLeft.Controls.Add(lblCliDireccion, 0, 3);
+            tblLeft.Controls.Add(txtClienteDireccion, 1, 3);
+            tblLeft.Controls.Add(lblCliRnc, 0, 4);
+            tblLeft.Controls.Add(txtClienteRnc, 1, 4);
+            tblLeft.Controls.Add(lblTipoComprobante, 0, 5);
+            tblLeft.Controls.Add(cboTipoComprobante, 1, 5);
             tblLeft.Dock = DockStyle.Fill;
             tblLeft.Location = new Point(3, 3);
             tblLeft.Name = "tblLeft";
-            tblLeft.RowCount = 5;
+            tblLeft.RowCount = 6;
+            tblLeft.RowStyles.Add(new RowStyle(SizeType.Absolute, 34F));
             tblLeft.RowStyles.Add(new RowStyle(SizeType.Absolute, 34F));
             tblLeft.RowStyles.Add(new RowStyle(SizeType.Absolute, 34F));
             tblLeft.RowStyles.Add(new RowStyle(SizeType.Absolute, 34F));
@@ -608,15 +618,15 @@ namespace Andloe.Presentacion
             lblClienteN.Font = new Font("Segoe UI Emoji", 9F, FontStyle.Bold, GraphicsUnit.Point, 0);
             lblClienteN.Location = new Point(3, 0);
             lblClienteN.Name = "lblClienteN";
-            lblClienteN.Size = new Size(100, 23);
+            lblClienteN.Size = new Size(120, 23);
             lblClienteN.TabIndex = 0;
-            lblClienteN.Text = "RNC";
+            lblClienteN.Text = "Buscar cliente";
             // 
             // txtClienteBuscar
             // 
             txtClienteBuscar.Location = new Point(183, 3);
             txtClienteBuscar.Name = "txtClienteBuscar";
-            txtClienteBuscar.Size = new Size(256, 23);
+            txtClienteBuscar.Size = new Size(475, 23);
             txtClienteBuscar.TabIndex = 1;
             // 
             // btnBuscarCliente
@@ -625,70 +635,90 @@ namespace Andloe.Presentacion
             btnBuscarCliente.Name = "btnBuscarCliente";
             btnBuscarCliente.Size = new Size(75, 23);
             btnBuscarCliente.TabIndex = 2;
+            btnBuscarCliente.Text = "Buscar";
+            btnBuscarCliente.UseVisualStyleBackColor = true;
+            // 
+            // lblClienteCodigo
+            // 
+            lblClienteCodigo.Location = new Point(3, 34);
+            lblClienteCodigo.Name = "lblClienteCodigo";
+            lblClienteCodigo.Size = new Size(120, 23);
+            lblClienteCodigo.TabIndex = 3;
+            lblClienteCodigo.Text = "Código cliente";
+            // 
+            // txtClienteCodigo
+            // 
+            txtClienteCodigo.Location = new Point(183, 37);
+            txtClienteCodigo.Name = "txtClienteCodigo";
+            txtClienteCodigo.Size = new Size(256, 23);
+            txtClienteCodigo.TabIndex = 4;
             // 
             // lblCliNombre
             // 
-            lblCliNombre.Location = new Point(3, 34);
+            lblCliNombre.Location = new Point(3, 68);
             lblCliNombre.Name = "lblCliNombre";
-            lblCliNombre.Size = new Size(100, 23);
-            lblCliNombre.TabIndex = 3;
+            lblCliNombre.Size = new Size(120, 23);
+            lblCliNombre.TabIndex = 5;
             lblCliNombre.Text = "Nombre";
             // 
             // txtClienteNombre
             // 
             tblLeft.SetColumnSpan(txtClienteNombre, 2);
-            txtClienteNombre.Location = new Point(183, 37);
+            txtClienteNombre.Location = new Point(183, 71);
             txtClienteNombre.Name = "txtClienteNombre";
-            txtClienteNombre.Size = new Size(256, 23);
-            txtClienteNombre.TabIndex = 4;
+            txtClienteNombre.Size = new Size(556, 23);
+            txtClienteNombre.TabIndex = 6;
             // 
             // lblCliDireccion
             // 
-            lblCliDireccion.Location = new Point(3, 68);
+            lblCliDireccion.Location = new Point(3, 102);
             lblCliDireccion.Name = "lblCliDireccion";
-            lblCliDireccion.Size = new Size(100, 23);
-            lblCliDireccion.TabIndex = 5;
+            lblCliDireccion.Size = new Size(120, 23);
+            lblCliDireccion.TabIndex = 7;
+            lblCliDireccion.Text = "Dirección";
             // 
             // txtClienteDireccion
             // 
             tblLeft.SetColumnSpan(txtClienteDireccion, 2);
-            txtClienteDireccion.Location = new Point(183, 71);
+            txtClienteDireccion.Location = new Point(183, 105);
             txtClienteDireccion.Name = "txtClienteDireccion";
-            txtClienteDireccion.Size = new Size(256, 23);
-            txtClienteDireccion.TabIndex = 6;
+            txtClienteDireccion.Size = new Size(556, 23);
+            txtClienteDireccion.TabIndex = 8;
             // 
             // lblCliRnc
             // 
-            lblCliRnc.Location = new Point(3, 102);
+            lblCliRnc.Location = new Point(3, 136);
             lblCliRnc.Name = "lblCliRnc";
-            lblCliRnc.Size = new Size(100, 23);
-            lblCliRnc.TabIndex = 7;
+            lblCliRnc.Size = new Size(120, 23);
+            lblCliRnc.TabIndex = 9;
+            lblCliRnc.Text = "RNC / Cédula";
             // 
             // txtClienteRnc
             // 
             tblLeft.SetColumnSpan(txtClienteRnc, 2);
-            txtClienteRnc.Location = new Point(183, 105);
+            txtClienteRnc.Location = new Point(183, 139);
             txtClienteRnc.Name = "txtClienteRnc";
-            txtClienteRnc.Size = new Size(256, 23);
-            txtClienteRnc.TabIndex = 8;
+            txtClienteRnc.Size = new Size(556, 23);
+            txtClienteRnc.TabIndex = 10;
             // 
             // lblTipoComprobante
             // 
-            lblTipoComprobante.Location = new Point(3, 136);
+            lblTipoComprobante.Location = new Point(3, 170);
             lblTipoComprobante.Name = "lblTipoComprobante";
-            lblTipoComprobante.Size = new Size(100, 23);
-            lblTipoComprobante.TabIndex = 9;
+            lblTipoComprobante.Size = new Size(120, 23);
+            lblTipoComprobante.TabIndex = 11;
+            lblTipoComprobante.Text = "Tipo comprobante";
             // 
             // cboTipoComprobante
             // 
             tblLeft.SetColumnSpan(cboTipoComprobante, 2);
             cboTipoComprobante.Dock = DockStyle.Fill;
             cboTipoComprobante.DropDownStyle = ComboBoxStyle.DropDownList;
-            cboTipoComprobante.Location = new Point(183, 142);
+            cboTipoComprobante.Location = new Point(183, 176);
             cboTipoComprobante.Margin = new Padding(3, 6, 0, 6);
             cboTipoComprobante.Name = "cboTipoComprobante";
             cboTipoComprobante.Size = new Size(598, 23);
-            cboTipoComprobante.TabIndex = 10;
+            cboTipoComprobante.TabIndex = 12;
             // 
             // tblRightWrap
             // 
@@ -999,6 +1029,7 @@ namespace Andloe.Presentacion
             // 
             pnlHeader.Controls.Add(lblTitle);
             pnlHeader.Controls.Add(lblSubTitle);
+            pnlHeader.Controls.Add(txtEstadoFiscal);
             pnlHeader.Dock = DockStyle.Top;
             pnlHeader.Location = new Point(12, 12);
             pnlHeader.Name = "pnlHeader";
@@ -1024,6 +1055,19 @@ namespace Andloe.Presentacion
             lblSubTitle.Size = new Size(246, 20);
             lblSubTitle.TabIndex = 1;
             lblSubTitle.Text = "Cotización · Proforma · Factura (RI)";
+            // 
+            // txtEstadoFiscal
+            // 
+            txtEstadoFiscal.BackColor = Color.White;
+            txtEstadoFiscal.BorderStyle = BorderStyle.FixedSingle;
+            txtEstadoFiscal.Font = new Font("Segoe UI", 9F, FontStyle.Bold);
+            txtEstadoFiscal.ForeColor = Color.Black;
+            txtEstadoFiscal.Location = new Point(400, 15);
+            txtEstadoFiscal.Name = "txtEstadoFiscal";
+            txtEstadoFiscal.ReadOnly = true;
+            txtEstadoFiscal.Size = new Size(400, 23);
+            txtEstadoFiscal.TabIndex = 2;
+            txtEstadoFiscal.TextAlign = HorizontalAlignment.Center;
             // 
             // lblInfoFacturaId
             // 

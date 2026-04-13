@@ -59,16 +59,27 @@ ORDER BY [FechaCreacion] DESC, [Código] DESC;", cn);
             using var cmd = new SqlCommand(@"
 SELECT TOP(1)
        c.ClienteId,
-       c.[Código]      AS Codigo,
+       c.[Código] AS Codigo,
        c.[Nombre],
        c.CodVendedor,
        c.[RNC_Cedula],
        c.[Direccion],
        c.[Telefono],
-       c.[Tipo]
+       c.[Tipo],
+       tp.TerminoPagoId,
+       c.RazonSocialFiscal,
+       c.CorreoFiscal,
+       c.ProvinciaCodigo,
+       c.MunicipioCodigo,
+       c.PaisCodigo,
+       c.IdentificadorExtranjero,
+       c.EsExtranjero,
+       c.ValidadoDGII
 FROM dbo.Cliente c
+LEFT JOIN dbo.TerminoPago tp
+       ON tp.Codigo = c.CodTerminoPagos
 WHERE c.[RNC_Cedula] = @v
-   OR c.[Código]      = @v;", cn);
+   OR c.[Código] = @v;", cn);
 
             cmd.Parameters.Add("@v", SqlDbType.VarChar, 50).Value = valor.Trim();
 
@@ -78,13 +89,23 @@ WHERE c.[RNC_Cedula] = @v
             return new ClienteDto
             {
                 ClienteId = rd.IsDBNull(0) ? 0 : rd.GetInt32(0),
-                Codigo = rd.IsDBNull(1) ? "" : rd.GetString(1),
-                Nombre = rd.IsDBNull(2) ? "" : rd.GetString(2),
-                CodVendedor = rd.IsDBNull(3) ? null : rd.GetString(3),
-                RncCedula = rd.IsDBNull(4) ? null : rd.GetString(4),
-                Direccion = rd.IsDBNull(5) ? null : rd.GetString(5),
-                Telefono = rd.IsDBNull(6) ? null : rd.GetString(6),
-                Tipo = rd.IsDBNull(7) ? (byte)0 : rd.GetByte(7)
+                Codigo = rd.IsDBNull(1) ? "" : Convert.ToString(rd.GetValue(1)) ?? "",
+                Nombre = rd.IsDBNull(2) ? "" : Convert.ToString(rd.GetValue(2)) ?? "",
+                CodVendedor = rd.IsDBNull(3) ? null : Convert.ToString(rd.GetValue(3)),
+                RncCedula = rd.IsDBNull(4) ? null : Convert.ToString(rd.GetValue(4)),
+                Direccion = rd.IsDBNull(5) ? null : Convert.ToString(rd.GetValue(5)),
+                Telefono = rd.IsDBNull(6) ? null : Convert.ToString(rd.GetValue(6)),
+                Tipo = rd.IsDBNull(7) ? (byte)0 : Convert.ToByte(rd.GetValue(7)),
+                TerminoPagoId = rd.IsDBNull(8) ? (int?)null : Convert.ToInt32(rd.GetValue(8)),
+
+                RazonSocialFiscal = rd.IsDBNull(9) ? null : Convert.ToString(rd.GetValue(9)),
+                CorreoFiscal = rd.IsDBNull(10) ? null : Convert.ToString(rd.GetValue(10)),
+                ProvinciaCodigo = rd.IsDBNull(11) ? null : Convert.ToString(rd.GetValue(11)),
+                MunicipioCodigo = rd.IsDBNull(12) ? null : Convert.ToString(rd.GetValue(12)),
+                PaisCodigo = rd.IsDBNull(13) ? null : Convert.ToString(rd.GetValue(13)),
+                IdentificadorExtranjero = rd.IsDBNull(14) ? null : Convert.ToString(rd.GetValue(14)),
+                EsExtranjero = !rd.IsDBNull(15) && Convert.ToBoolean(rd.GetValue(15)),
+                ValidadoDGII = !rd.IsDBNull(16) && Convert.ToBoolean(rd.GetValue(16))
             };
         }
 
@@ -388,7 +409,7 @@ ORDER BY [Nombre];", cn);
 
             cmd.Parameters.Add("@top", SqlDbType.Int).Value = top;
 
-            using var rd = cmd.ExecuteReader();
+            using var rd = cmd.ExecuteReader(  );
             while (rd.Read())
             {
                 list.Add(new ClienteDto
@@ -462,10 +483,25 @@ ORDER BY v.Fecha;", cn);
             using var cmd = new SqlCommand(@"
 SELECT TOP(1)
        c.ClienteId,
-       c.[Código]      AS Codigo,
+       c.[Código] AS Codigo,
        c.[Nombre],
-       c.[RNC_Cedula]
+       c.CodVendedor,
+       c.[RNC_Cedula],
+       c.[Direccion],
+       c.[Telefono],
+       c.[Tipo],
+       tp.TerminoPagoId,
+       c.RazonSocialFiscal,
+       c.CorreoFiscal,
+       c.ProvinciaCodigo,
+       c.MunicipioCodigo,
+       c.PaisCodigo,
+       c.IdentificadorExtranjero,
+       c.EsExtranjero,
+       c.ValidadoDGII
 FROM dbo.Cliente c
+LEFT JOIN dbo.TerminoPago tp
+       ON tp.Codigo = c.CodTerminoPagos
 WHERE c.[RNC_Cedula] = @v;", cn);
 
             cmd.Parameters.Add("@v", SqlDbType.VarChar, 20).Value = rnc;
@@ -476,10 +512,23 @@ WHERE c.[RNC_Cedula] = @v;", cn);
             return new ClienteDto
             {
                 ClienteId = rd.IsDBNull(0) ? 0 : rd.GetInt32(0),
-                Codigo = rd.IsDBNull(1) ? "" : rd.GetString(1),
-                Nombre = rd.IsDBNull(2) ? "" : rd.GetString(2),
-                CodVendedor = null,
-                RncCedula = rd.IsDBNull(3) ? null : rd.GetString(3),
+                Codigo = rd.IsDBNull(1) ? "" : Convert.ToString(rd.GetValue(1)) ?? "",
+                Nombre = rd.IsDBNull(2) ? "" : Convert.ToString(rd.GetValue(2)) ?? "",
+                CodVendedor = rd.IsDBNull(3) ? null : Convert.ToString(rd.GetValue(3)),
+                RncCedula = rd.IsDBNull(4) ? null : Convert.ToString(rd.GetValue(4)),
+                Direccion = rd.IsDBNull(5) ? null : Convert.ToString(rd.GetValue(5)),
+                Telefono = rd.IsDBNull(6) ? null : Convert.ToString(rd.GetValue(6)),
+                Tipo = rd.IsDBNull(7) ? (byte)0 : Convert.ToByte(rd.GetValue(7)),
+                TerminoPagoId = rd.IsDBNull(8) ? (int?)null : Convert.ToInt32(rd.GetValue(8)),
+
+                RazonSocialFiscal = rd.IsDBNull(9) ? null : Convert.ToString(rd.GetValue(9)),
+                CorreoFiscal = rd.IsDBNull(10) ? null : Convert.ToString(rd.GetValue(10)),
+                ProvinciaCodigo = rd.IsDBNull(11) ? null : Convert.ToString(rd.GetValue(11)),
+                MunicipioCodigo = rd.IsDBNull(12) ? null : Convert.ToString(rd.GetValue(12)),
+                PaisCodigo = rd.IsDBNull(13) ? null : Convert.ToString(rd.GetValue(13)),
+                IdentificadorExtranjero = rd.IsDBNull(14) ? null : Convert.ToString(rd.GetValue(14)),
+                EsExtranjero = !rd.IsDBNull(15) && Convert.ToBoolean(rd.GetValue(15)),
+                ValidadoDGII = !rd.IsDBNull(16) && Convert.ToBoolean(rd.GetValue(16))
             };
         }
 

@@ -18,6 +18,7 @@ namespace Andloe.Presentacion
         private readonly ClienteRepository _repo = new();
         private readonly DgiiRncRepository _dgiiRepo = new();
         private readonly string? _codigo;
+        private readonly string? _filtroRetorno;
         private readonly TerminoPagoRepository _terminoRepo = new();
         private List<TerminoPago> _terminosPago = new();
 
@@ -39,9 +40,10 @@ namespace Andloe.Presentacion
 
         private bool _actualizandoUi;
 
-        public FormClienteEdit(string? codigo)
+        public FormClienteEdit(string? codigo, string? filtroRetorno = null)
         {
             _codigo = codigo;
+            _filtroRetorno = filtroRetorno;
             InitializeComponent();
 
             AcceptButton = btnGuardar;
@@ -75,16 +77,12 @@ namespace Andloe.Presentacion
 
             txtRazonFiscal.TextChanged += (_, __) => ActualizarEstadoFiscalUi();
             txtEstadoRncDgii.TextChanged += (_, __) => ActualizarEstadoFiscalUi();
-            
-
 
             Load += (_, __) =>
             {
-
                 CargarCatalogos();
                 if (_codigo == null) PrepNuevo();
                 else Cargar();
-
             };
         }
 
@@ -175,7 +173,7 @@ namespace Andloe.Presentacion
             var principal = FormPrincipal.Instancia;
             if (principal == null) return;
 
-            var frm = new FormClientes();
+            var frm = new FormClientes(_filtroRetorno);
             principal.OpenChild(frm);
             frm.Cargar();
         }

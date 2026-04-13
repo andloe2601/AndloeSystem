@@ -7,17 +7,27 @@ namespace Andloe.Presentacion
     public partial class FormClientes : Form
     {
         private readonly ClienteRepository _repo = new();
+        private readonly string? _filtroInicial;
 
-        public FormClientes()
+        public FormClientes(string? filtroInicial = null)
         {
+            _filtroInicial = filtroInicial;
             InitializeComponent();
+
             btnBuscar.Click += (_, __) => Cargar();
             txtBuscar.KeyDown += (s, e) => { if (e.KeyCode == Keys.Enter) { Cargar(); e.SuppressKeyPress = true; } };
             btnNuevo.Click += (_, __) => Crear();
             btnEditar.Click += (_, __) => EditarActual();
             btnEliminar.Click += (_, __) => EliminarActual();
             grid.DoubleClick += (_, __) => EditarActual();
-            Shown += (_, __) => Cargar();
+
+            Shown += (_, __) =>
+            {
+                if (!string.IsNullOrWhiteSpace(_filtroInicial))
+                    txtBuscar.Text = _filtroInicial;
+
+                Cargar();
+            };
         }
 
         public void Cargar()
@@ -58,7 +68,7 @@ namespace Andloe.Presentacion
                 return;
             }
 
-            principal.OpenChild(new FormClienteEdit(codigo));
+            principal.OpenChild(new FormClienteEdit(codigo, txtBuscar.Text.Trim()));
         }
 
         private string? GetCodigoActual()
@@ -79,6 +89,8 @@ namespace Andloe.Presentacion
 
             AbrirEditor(cod);
         }
+
+  
 
         private void EliminarActual()
         {

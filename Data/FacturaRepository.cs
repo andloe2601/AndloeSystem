@@ -248,6 +248,20 @@ WHERE FacturaId = @id;", cn, tx))
             }
         }
 
+        public void SetFechaVencimientoBorrador(int facturaId, DateTime? fechaVencimiento)
+        {
+            using var cn = Db.GetOpenConnection();
+            using var cmd = new SqlCommand(@"
+UPDATE dbo.FacturaCab
+SET FechaVencimiento = @FechaVencimiento
+WHERE FacturaId = @FacturaId;", cn);
+
+            cmd.Parameters.Add("@FacturaId", SqlDbType.Int).Value = facturaId;
+            cmd.Parameters.Add("@FechaVencimiento", SqlDbType.DateTime).Value =
+                (object?)fechaVencimiento ?? DBNull.Value;
+
+            cmd.ExecuteNonQuery();
+        }
 
         private static void RevertirStockPorFactura(int facturaId, SqlConnection cn, SqlTransaction tx, SchemaCache cache)
         {
