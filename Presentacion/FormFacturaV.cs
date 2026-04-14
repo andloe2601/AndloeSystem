@@ -46,6 +46,9 @@ namespace Andloe.Presentacion
         private readonly System.Windows.Forms.Timer _clienteSearchTimer = new System.Windows.Forms.Timer();
         private bool _openingClienteSearch = false;
 
+        private readonly System.Windows.Forms.Timer _productoSearchTimer = new System.Windows.Forms.Timer();
+        private bool _openingProductoSearch = false;
+
         private readonly System.Windows.Forms.Timer _autoSaveTimer = new System.Windows.Forms.Timer();
         private bool _pendingAutoSave = false;
         private bool _savingNow = false;
@@ -143,7 +146,19 @@ namespace Andloe.Presentacion
 
             base.OnFormClosed(e);
         }
-         
+
+        protected override bool ProcessCmdKey(ref Message msg, Keys keyData)
+        {
+            if (keyData == Keys.Enter)
+            {
+                if (ResolverEnterProductoEnGrid())
+                    return true;
+            }
+
+            return base.ProcessCmdKey(ref msg, keyData);
+        }
+
+
         // ============================================================
         // AUTO SAVE
         // ============================================================
@@ -833,6 +848,7 @@ private void AutoSaveTimer_Tick(object? sender, EventArgs e)
                     grid.CommitEdit(DataGridViewDataErrorContexts.Commit);
             };
 
+                      
             grid.CellBeginEdit += (_, e) =>
             {
                 if (_finalizada) { e.Cancel = true; return; }
@@ -943,6 +959,8 @@ private void AutoSaveTimer_Tick(object? sender, EventArgs e)
                 _suppressReload = false;
             }
         }
+
+        
 
         private void ValidateRowValues(int rowIndex)
         {
@@ -2404,6 +2422,188 @@ private void AutoSaveTimer_Tick(object? sender, EventArgs e)
             try { r.Cells["colImpuestoId"].Value = prod.ImpuestoId; } catch { }
 
             RecalcularFilaUI(rowIndex);
+        }
+
+        private bool ResolverEnterProductoEnGrid()
+        {
+            if (_finalizada) return false;
+            if (grid.CurrentCell == null) return false;
+
+            var rowIndex = grid.CurrentCell.RowIndex;
+            if (rowIndex < 0 || rowIndex >= grid.Rows.Count) return false;
+
+            var colName = grid.Columns[grid.CurrentCell.ColumnIndex].Name;
+            if (colName != "colProductoCodigo" && colName != "colCodBarra")
+                return false;
+
+            string valor = "";
+
+            try
+            {
+                if (grid.IsCurrentCellInEditMode && grid.EditingControl is TextBox tb)
+                    valor = (tb.Text ?? "").Trim();
+                else
+                    valor = (Convert.ToString(grid.CurrentCell.Value) ?? "").Trim();
+            }
+            catch { }
+
+            try
+            {
+                grid.EndEdit();
+            }
+            catch { }
+
+            BeginInvoke(new Action(() =>
+            {
+                if (_finalizada) return;
+                if (rowIndex < 0 || rowIndex >= grid.Rows.Count) return;
+
+                if (string.IsNullOrWhiteSpace(valor))
+                {
+                    BuscarProductoDesdeVentana(rowIndex, null);
+                    return;
+                }
+
+                var prod = _prodRepo.ObtenerPorCodigoOBarras(valor);
+                if (prod != null)
+                {
+                    AplicarProductoEnFila(rowIndex, prod);
+                    return;
+                }
+
+                BuscarProductoDesdeVentana(rowIndex, valor);
+            }));
+
+            return true;
+        }
+
+        private void BuscarProductoDesdeVentana(int rowIndex, string? filtroInicial = null)
+        {
+            if (_finalizada) return;
+            if (_facturaId <= 0) return;
+            if (rowIndex < 0 || rowIndex >= grid.Rows.Count) return;
+            if (_openingProductoSearch) return;
+
+            try
+            {
+                _openingProductoSearch = true;
+
+                using var frm = new FormBuscarProducto();
+
+                if (!string.IsNullOrWhiteSpace(filtroInicial))
+                    frm.SetFiltroInicial(filtroInicial);
+
+                if (frm.ShowDialog(this) != DialogResult.OK) return;
+
+                var prod = frm.ProductoSeleccionado;
+                if (prod == null) return;
+
+                AplicarProductoEnFila(rowIndex, prod);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(ex.Message, "Producto", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+            finally
+            {
+                _openingProductoSearch = false;
+            }
+        }
+
+        private void AplicarProductoEnFila(int rowIndex, Producto prod)
+        {
+            if (rowIndex < 0) return;
+
+            if (rowIndex >= grid.Rows.Count)
+                rowIndex = grid.Rows.Count - 1;
+
+            if (rowIndex < 0) return;
+
+            var r = grid.Rows[rowIndex];
+            if (r == null) return;
+
+            if (r.IsNewRow)
+            {
+                rowIndex = grid.Rows.Add();
+                r = grid.Rows[rowIndex];
+            }
+
+            var productoCodigo = (prod.Codigo ?? "").Trim();
+            if (string.IsNullOrWhiteSpace(productoCodigo)) return;
+
+            var codBarra = "";
+            try
+            {
+                codBarra = _facRepo.ObtenerPrimerCodigoBarra(productoCodigo) ?? "";
+            }
+            catch { }
+
+            codBarra = codBarra.Trim();
+
+            var descripcion = (prod.Referencia ?? "").Trim();
+            if (string.IsNullOrWhiteSpace(descripcion))
+                descripcion = (prod.Descripcion ?? "").Trim();
+            if (string.IsNullOrWhiteSpace(descripcion))
+                descripcion = productoCodigo;
+
+            var unidad = (prod.UnidadMedidaCodigo ?? "").Trim();
+            if (string.IsNullOrWhiteSpace(unidad))
+                unidad = (prod.UnidadBase ?? "").Trim();
+            if (string.IsNullOrWhiteSpace(unidad))
+                unidad = _prodRepo.ObtenerUnidadPorCodigo(productoCodigo, "UND") ?? "UND";
+
+            decimal precio = prod.PrecioVenta;
+            if (precio <= 0m) precio = prod.PrecioCoste;
+            if (precio <= 0m) precio = prod.PrecioCompraPromedio;
+            if (precio <= 0m) precio = prod.UltimoPrecioCompra;
+
+            _gridInternalUpdate = true;
+            try
+            {
+                r.Cells["colProductoCodigo"].Value = productoCodigo;
+                r.Cells["colCodBarra"].Value = codBarra;
+                r.Cells["colDescripcion"].Value = descripcion;
+                r.Cells["colUnidad"].Value = unidad;
+
+                if (GetCellDecimal(r, "colCantidad") <= 0m)
+                    r.Cells["colCantidad"].Value = 1m;
+
+                r.Cells["colPrecio"].Value = precio;
+
+                if (GetCellDecimal(r, "colItbisPct") <= 0m)
+                    r.Cells["colItbisPct"].Value = 18m;
+
+                if (GetCellDecimal(r, "colDescuentoPct") < 0m)
+                    r.Cells["colDescuentoPct"].Value = 0m;
+
+                try { r.Cells["colImpuestoId"].Value = prod.ImpuestoId; } catch { }
+            }
+            finally
+            {
+                _gridInternalUpdate = false;
+            }
+
+            RecalcularFilaUI(rowIndex);
+            RecalcularTotalesDesdeGridUI();
+
+            try
+            {
+                if (GetDetId(rowIndex) <= 0)
+                    InsertarFilasNuevasSiExisten();
+                else
+                    UpsertFilaBD(rowIndex);
+            }
+            catch { }
+
+            ScheduleAutoSave();
+
+            if (grid.Columns.Contains("colCantidad"))
+                grid.CurrentCell = r.Cells["colCantidad"];
+
+            if (grid.EditingControl is TextBox tb)
+            {
+                tb.SelectAll();
+            }
         }
 
         private void RecalcularFilaUI(int rowIndex)
