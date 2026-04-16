@@ -18,8 +18,9 @@ namespace Andloe.Data.Fiscal
         public int DocumentType { get; set; }
         public int IncomeType { get; set; }
         public int PaymentType { get; set; }
+        public string? SequenceDueDate { get; set; }
 
-        
+
         public string? PaymentDeadline { get; set; }
 
         public List<AlanubePaymentFormDto> PaymentFormsTable { get; set; } = new();

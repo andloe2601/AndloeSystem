@@ -9,12 +9,15 @@ using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.VisualBasic;
 using System;
+using System.ComponentModel;
 using System.Data;
 using System.Diagnostics;
 using System.Drawing;
+using System.Drawing.Drawing2D;
 using System.Globalization;
 using System.Linq;
 using System.Windows.Forms;
+
 
 
 namespace Andloe.Presentacion
@@ -73,6 +76,8 @@ namespace Andloe.Presentacion
         {
             InitializeComponent();
 
+            AplicarEstiloModernoFormulario();
+
             KeyPreview = true;
             Load += FormFacturaV_Load;
             KeyDown += FormFacturaV_KeyDown;
@@ -83,11 +88,8 @@ namespace Andloe.Presentacion
             WireEvents();
             InitCombos();
 
-            // ✅ aplica estado inicial (E32 sin doc / E31 con doc)
             ActualizarEstadoComprobante();
-
             SetupAutoSave();
-
             AplicarModoEdicion();
             AplicarReglasUI();
 
@@ -499,12 +501,44 @@ private void AutoSaveTimer_Tick(object? sender, EventArgs e)
                     .Trim()
                     .ToUpperInvariant();
 
+                if (prefijo == "E34")
+                    throw new InvalidOperationException("Alanube Sandbox en este flujo solo está habilitado para E31, E32 y E45. E34 no está soportado por el endpoint actual.");
+
                 if (string.IsNullOrWhiteSpace(prefijo))
                     throw new InvalidOperationException("Debe seleccionar el tipo de comprobante fiscal.");
 
-                // Hoy AlanubeService solo soporta 31 y 32
-                if (prefijo == "E34")
-                    throw new InvalidOperationException("Alanube Sandbox todavía no está habilitado en este flujo para E34. Usa E31 o E32.");
+                if (prefijo != "E31" && prefijo != "E32" && prefijo != "E45")
+                    throw new InvalidOperationException("Alanube Sandbox solo está habilitado en este flujo para E31, E32 y E45.");
+
+                // ✅ Regla Alanube crédito fiscal
+                if (prefijo == "E31")
+                {
+                    var esCredito = false;
+
+                    try
+                    {
+                        esCredito =
+                            string.Equals(cab.TipoPago, FacturaRepository.PAGO_CREDITO, StringComparison.OrdinalIgnoreCase)
+                            || cab.TipoPagoECFHeader == 2;
+                    }
+                    catch { }
+
+                    if (esCredito)
+                    {
+                        if (!cab.FechaLimitePago.HasValue)
+                            throw new InvalidOperationException("La factura a crédito no tiene FechaLimitePago.");
+
+                        if (!cab.FechaVencimientoSecuencia.HasValue)
+                        {
+                            // fallback defensivo: usar la fecha límite de pago
+                            _facRepo.SetFechaVencimientoSecuenciaAlanube(facturaId, cab.FechaLimitePago.Value.Date);
+                            cab = _facRepo.ObtenerCab(facturaId);
+
+                            if (cab == null || !cab.FechaVencimientoSecuencia.HasValue)
+                                throw new InvalidOperationException("No se pudo establecer FechaVencimientoSecuencia para Alanube.");
+                        }
+                    }
+                }
 
                 var alanube = new ECFAlanubeService();
                 var resp = alanube.EnviarFactura(facturaId, Environment.UserName);
@@ -574,7 +608,7 @@ private void AutoSaveTimer_Tick(object? sender, EventArgs e)
             if (_esComprobanteFiscal)
             {
                 var prefijo = (Convert.ToString(cboTipoComprobante.SelectedValue) ?? "").Trim().ToUpperInvariant();
-                var requiereDoc = (prefijo == "E31" || prefijo == "E34");
+                var requiereDoc = (prefijo == "E31" || prefijo == "E34" || prefijo == "E45");
 
                 if (requiereDoc && string.IsNullOrWhiteSpace(SoloDigitos(txtClienteRnc.Text)))
                 {
@@ -2994,5 +3028,198 @@ private void AutoSaveTimer_Tick(object? sender, EventArgs e)
             );
         }
 
+        private RoundedPanel WrapRoundedTextBox(TextBox txt, int height = 34)
+        {
+            var parent = txt.Parent;
+            if (parent == null) return null!;
+
+            var index = parent.Controls.GetChildIndex(txt);
+            var bounds = txt.Bounds;
+            var dock = txt.Dock;
+            var margin = txt.Margin;
+
+            parent.Controls.Remove(txt);
+
+            var wrap = new RoundedPanel
+            {
+                Name = "wrap_" + txt.Name,
+                Margin = margin,
+                Dock = dock,
+                Size = new Size(bounds.Width, height),
+                MinimumSize = new Size(80, height),
+                BorderRadius = 10,
+                BorderSize = 1,
+                BorderColor = Color.FromArgb(220, 224, 230),
+                BackColor = Color.White
+            };
+
+            txt.Parent = wrap;
+            txt.BorderStyle = BorderStyle.None;
+            txt.BackColor = Color.White;
+            txt.ForeColor = Color.FromArgb(25, 25, 25);
+            txt.Font = new Font("Segoe UI", 9.5F, FontStyle.Regular);
+            txt.Location = new Point(8, 8);
+            txt.Width = wrap.Width - 16;
+            txt.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
+
+            wrap.Controls.Add(txt);
+            wrap.Resize += (_, __) =>
+            {
+                txt.Width = wrap.ClientSize.Width - 16;
+                txt.Top = (wrap.ClientSize.Height - txt.Height) / 2;
+            };
+
+            parent.Controls.Add(wrap);
+            parent.Controls.SetChildIndex(wrap, index);
+
+            return wrap;
+        }
+
+       
+
+        private void StyleCheck(CheckBox chk)
+        {
+            chk.AutoSize = false;
+            chk.Height = 28;
+            chk.Width = 120;
+            chk.Font = new Font("Segoe UI", 9F, FontStyle.Regular);
+            chk.Text = "A crédito";
+        }
+
+        private void AplicarEstiloModernoFormulario()
+        {
+            SuspendLayout();
+
+            try
+            {
+                BackColor = Color.WhiteSmoke;
+
+                // TextBox principales
+                WrapRoundedTextBox(txtClienteBuscar);
+                WrapRoundedTextBox(txtClienteCodigo);
+                WrapRoundedTextBox(txtClienteNombre);
+                WrapRoundedTextBox(txtClienteDireccion);
+                WrapRoundedTextBox(txtClienteRnc);
+                WrapRoundedTextBox(txtDiasCredito);
+                WrapRoundedTextBox(txtNumeroFacturaTop);
+                WrapRoundedTextBox(txtSubtotal);
+                WrapRoundedTextBox(txtDescuentoTotal);
+                WrapRoundedTextBox(txtItbisTotal);
+                WrapRoundedTextBox(txtTotalGeneral);
+                WrapRoundedTextBox(txtEstadoFiscal);
+
+                // Combos
+                StyleCombo(cboTipoComprobante);
+                StyleCombo(cboTipoDoc);
+                StyleCombo(cboVendedor);
+                StyleCombo(cboTerminoPago);
+
+                // Check
+                StyleCheck(chkCredito);
+
+                // Botón buscar más limpio
+                btnBuscarCliente.Height = 34;
+                btnBuscarCliente.Width = 100;
+                btnBuscarCliente.FlatStyle = FlatStyle.Flat;
+                btnBuscarCliente.FlatAppearance.BorderSize = 0;
+                btnBuscarCliente.BackColor = Color.FromArgb(45, 125, 255);
+                btnBuscarCliente.ForeColor = Color.White;
+                btnBuscarCliente.Font = new Font("Segoe UI", 9F, FontStyle.Bold);
+                btnBuscarCliente.Cursor = Cursors.Hand;
+
+                // Totales sólo lectura más elegantes
+                txtSubtotal.TextAlign = HorizontalAlignment.Right;
+                txtDescuentoTotal.TextAlign = HorizontalAlignment.Right;
+                txtItbisTotal.TextAlign = HorizontalAlignment.Right;
+                txtTotalGeneral.TextAlign = HorizontalAlignment.Right;
+
+                txtSubtotal.ReadOnly = true;
+                txtDescuentoTotal.ReadOnly = true;
+                txtItbisTotal.ReadOnly = true;
+                txtTotalGeneral.ReadOnly = true;
+                txtEstadoFiscal.ReadOnly = true;
+                txtNumeroFacturaTop.ReadOnly = true;
+            }
+            finally
+            {
+                ResumeLayout();
+            }
+        }
+
+        public class RoundedPanel : Panel
+        {
+            private int _borderRadius = 8;
+            private int _borderSize = 1;
+            private Color _borderColor = Color.FromArgb(220, 224, 230);
+
+            [DefaultValue(8)]
+            public int BorderRadius
+            {
+                get => _borderRadius;
+                set
+                {
+                    _borderRadius = value < 1 ? 1 : value;
+                    Invalidate();
+                }
+            }
+
+            [DefaultValue(1)]
+            public int BorderSize
+            {
+                get => _borderSize;
+                set
+                {
+                    _borderSize = value < 1 ? 1 : value;
+                    Invalidate();
+                }
+            }
+
+            [DesignerSerializationVisibility(DesignerSerializationVisibility.Visible)]
+            public Color BorderColor
+            {
+                get => _borderColor;
+                set
+                {
+                    _borderColor = value;
+                    Invalidate();
+                }
+            }
+
+            public RoundedPanel()
+            {
+                DoubleBuffered = true;
+                BackColor = Color.White;
+                ResizeRedraw = true;
+                Padding = new Padding(8, 4, 8, 4);
+            }
+
+            protected override void OnPaint(PaintEventArgs e)
+            {
+                base.OnPaint(e);
+
+                e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
+
+                using var path = GetPath(ClientRectangle, BorderRadius);
+                using var pen = new Pen(BorderColor, BorderSize);
+
+                Region = new Region(path);
+                e.Graphics.DrawPath(pen, path);
+            }
+
+            private GraphicsPath GetPath(Rectangle rect, int radius)
+            {
+                var path = new GraphicsPath();
+                int d = radius * 2;
+
+                path.StartFigure();
+                path.AddArc(rect.X, rect.Y, d, d, 180, 90);
+                path.AddArc(rect.Right - d - 1, rect.Y, d, d, 270, 90);
+                path.AddArc(rect.Right - d - 1, rect.Bottom - d - 1, d, d, 0, 90);
+                path.AddArc(rect.X, rect.Bottom - d - 1, d, d, 90, 90);
+                path.CloseFigure();
+
+                return path;
+            }
+        }
     }
 }

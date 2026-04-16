@@ -10,7 +10,6 @@ using System.Data;
 using System.Drawing;
 using System.Windows.Forms;
 
-
 namespace Andloe.Presentacion
 {
     public partial class FormMonitorECF : Form
@@ -157,21 +156,29 @@ namespace Andloe.Presentacion
             if (!hasRow || _working) return;
 
             var facturaId = SafeInt(GetCell("FacturaId"));
-            if (facturaId <= 0) return;
+            var tipo = SafeInt(GetCell("TipoECF"));
+            var encf = SafeStr(GetCell("ENCF")) ?? "";
+            var trackId = SafeStr(GetCell("TrackId")) ?? "";
+            var estado = (SafeStr(GetCell("EstadoDGII")) ?? "").Trim().ToUpperInvariant();
+
+            if (facturaId <= 0 || tipo <= 0) return;
 
             try
             {
                 var xmlSinFirmar = _repo.ObtenerXmlSinFirmar(facturaId);
                 var xmlFirmado = _repo.ObtenerXmlFirmado(facturaId);
-                var trackId = _repo.ObtenerTrackId(facturaId);
 
                 btnFirmar.Enabled = !string.IsNullOrWhiteSpace(xmlSinFirmar);
                 btnEnviar.Enabled = !string.IsNullOrWhiteSpace(xmlFirmado);
                 btnConsultar.Enabled = !string.IsNullOrWhiteSpace(trackId);
 
-                // Alanube
-                btnEnviarAlanube.Enabled = true;
-                btnConsultarAlanube.Enabled = !string.IsNullOrWhiteSpace(trackId);
+                btnEnviarAlanube.Enabled =
+                    !string.IsNullOrWhiteSpace(encf) &&
+                    !string.IsNullOrWhiteSpace(xmlFirmado) &&
+                    estado != "ACEPTADO";
+
+                btnConsultarAlanube.Enabled =
+                    !string.IsNullOrWhiteSpace(trackId);
             }
             catch
             {
@@ -196,8 +203,8 @@ namespace Andloe.Presentacion
                 if (facturaId <= 0)
                     throw new Exception("FacturaId inválido.");
 
-                if (tipo is not 31 and not 32)
-                    throw new Exception("Alanube por ahora solo está preparado para E31 y E32.");
+                if (tipo <= 0)
+                    throw new Exception("TipoECF inválido.");
 
                 if (string.IsNullOrWhiteSpace(encf))
                     throw new Exception("La factura no tiene eNCF.");
@@ -208,6 +215,16 @@ namespace Andloe.Presentacion
 
                 var track = resp?.GetTrackOrId() ?? "";
                 var estado = resp?.Status ?? resp?.LegalStatus ?? "OK";
+
+                _repo.GuardarRespuestaAlanubePorFactura(
+                    facturaId,
+                    track,
+                    resp?.Status,
+                    resp?.LegalStatus,
+                    null,
+                    resp?.Message,
+                    resp?.RawJson
+                );
 
                 MessageBox.Show(
                     $"Enviado a Alanube ✅\n\nTrack/Id: {track}\nEstado: {estado}",
@@ -227,12 +244,10 @@ namespace Andloe.Presentacion
                     MessageBoxButtons.OK,
                     MessageBoxIcon.Error);
             }
+            finally
             {
                 SetWorking(false);
             }
-
-
-
         }
 
         private void ConsultarAlanube()
@@ -248,8 +263,8 @@ namespace Andloe.Presentacion
                 if (facturaId <= 0)
                     throw new Exception("FacturaId inválido.");
 
-                if (tipo is not 31 and not 32)
-                    throw new Exception("Alanube por ahora solo está preparado para E31 y E32.");
+                if (tipo <= 0)
+                    throw new Exception("TipoECF inválido.");
 
                 if (string.IsNullOrWhiteSpace(trackId))
                     throw new Exception("No hay TrackId. Primero envía a Alanube.");
@@ -257,6 +272,15 @@ namespace Andloe.Presentacion
                 SetWorking(true);
 
                 var resp = _alanube.ConsultarFactura(facturaId);
+
+                _repo.RegistrarConsultaAlanubePorFactura(
+                    facturaId,
+                    resp?.Status,
+                    resp?.LegalStatus,
+                    resp?.Code,
+                    resp?.Message,
+                    resp?.RawJson
+                );
 
                 var estado = resp?.Status ?? "";
                 var legal = resp?.LegalStatus ?? "";
@@ -661,5 +685,3 @@ namespace Andloe.Presentacion
         }
     }
 }
-
-

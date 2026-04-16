@@ -15,5 +15,10 @@ namespace Andloe.Logica.DGII
         {
             return _service.ConsultarFactura(facturaId);
         }
+
+        public bool SoportaTipoEcf(int tipoEcf)
+        {
+            return tipoEcf > 0;
+        }
     }
 }

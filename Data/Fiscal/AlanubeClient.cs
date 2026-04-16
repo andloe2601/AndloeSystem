@@ -10,6 +10,7 @@ namespace Andloe.Data.Fiscal
     {
         private readonly SistemaConfigRepository _configRepository;
 
+
         public AlanubeClient()
         {
             _configRepository = new SistemaConfigRepository();
@@ -34,12 +35,19 @@ namespace Andloe.Data.Fiscal
         public AlanubeEmitResponseDto EmitirFactura32(string requestJson)
             => Post("invoices", requestJson);
 
+        public AlanubeEmitResponseDto EmitirFactura45(string requestJson)
+            => Post("gubernamentals", requestJson);
+
         public AlanubeStatusResponseDto ConsultarFactura31(string trackOrId)
             => Get($"fiscal-invoices/{Uri.EscapeDataString((trackOrId ?? "").Trim())}");
 
         public AlanubeStatusResponseDto ConsultarFactura32(string trackOrId)
             => Get($"invoices/{Uri.EscapeDataString((trackOrId ?? "").Trim())}");
 
+        public AlanubeStatusResponseDto ConsultarFactura45(string trackOrId)
+            => Get($"gubernamentals/{Uri.EscapeDataString((trackOrId ?? "").Trim())}");
+
+       
         private AlanubeEmitResponseDto Post(string endpoint, string requestJson)
         {
             var cfg = GetConfig();

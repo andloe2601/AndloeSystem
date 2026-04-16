@@ -69,6 +69,7 @@ namespace Andloe.Logica.DGII
                 {
                     31 => _alanubeClient.EmitirFactura31(json),
                     32 => _alanubeClient.EmitirFactura32(json),
+                    45 => _alanubeClient.EmitirFactura45(json),
                     _ => throw new NotSupportedException($"Tipo e-CF no soportado para Alanube Sandbox: {tipoReal}")
                 };
 
@@ -115,6 +116,7 @@ namespace Andloe.Logica.DGII
                 {
                     31 => _alanubeClient.ConsultarFactura31(trackId),
                     32 => _alanubeClient.ConsultarFactura32(trackId),
+                    45 => _alanubeClient.ConsultarFactura45(trackId),
                     _ => throw new NotSupportedException($"Tipo e-CF no soportado para Alanube Sandbox: {tipoReal}")
                 };
 
@@ -141,8 +143,8 @@ namespace Andloe.Logica.DGII
         {
             var tipoReal = ResolverTipoEcfReal(cab.Encf);
 
-            if (tipoReal is not 31 and not 32)
-                throw new InvalidOperationException($"Alanube Sandbox solo está preparado para 31 y 32. Tipo real: {tipoReal}");
+            if (tipoReal is not 31 and not 32 and not 45)
+                throw new InvalidOperationException($"Alanube Sandbox solo está preparado para 31, 32 y 45. Tipo real: {tipoReal}");
 
             if (cab.FechaDocumento == default)
                 throw new InvalidOperationException("La factura no tiene FechaDocumento.");
@@ -170,6 +172,12 @@ namespace Andloe.Logica.DGII
             var tipoReal = ResolverTipoEcfReal(cab.Encf);
 
             var paymentType = ResolverPaymentType(cab);
+            var sequenceDueDate = cab.FechaVencimientoSecuencia
+                                  ?? cab.FechaLimitePago;
+
+            if (sequenceDueDate == null)
+                throw new InvalidOperationException("No se pudo determinar sequenceDueDate para Alanube.");
+
             var totalGravado = Round2(cab.MontoGravadoTotal ?? 0m);
             var totalExento = Round2(cab.MontoExentoTotal ?? 0m);
             var totalItbis = Round2(cab.TotalImpuesto ?? 0m);
@@ -184,9 +192,14 @@ namespace Andloe.Logica.DGII
                     DocumentType = tipoReal,
                     IncomeType = cab.TipoIngresoId ?? 1,
                     PaymentType = paymentType,
+
+                    // ✅ Alanube exige este campo
+                    SequenceDueDate = sequenceDueDate?.ToString("yyyy-MM-dd"),
+
                     PaymentDeadline = paymentType == 2 && cab.FechaLimitePago.HasValue
         ? cab.FechaLimitePago.Value.ToString("yyyy-MM-dd")
         : null,
+
                     PaymentFormsTable = paymentType == 1
         ? new List<AlanubePaymentFormDto>
         {
@@ -342,6 +355,7 @@ namespace Andloe.Logica.DGII
             if (v.StartsWith("E31")) return 31;
             if (v.StartsWith("E32")) return 32;
             if (v.StartsWith("E34")) return 34;
+            if (v.StartsWith("E45")) return 45;
 
             throw new InvalidOperationException("No se pudo determinar el tipo e-CF desde el eNCF: " + v);
         }
@@ -379,6 +393,7 @@ SELECT TOP(1)
 
     fc.TipoPagoECFHeader,
     fc.FechaLimitePago,
+    fcr.FechaVencimientoSecuencia,
 
     fc.TotalDescuento,
     fc.TotalImpuesto,
@@ -411,6 +426,8 @@ SELECT TOP(1)
     c.ProvinciaCodigo AS ClienteProvinciaCodigo
 
 FROM dbo.vw_ECFFacturaCabecera fc
+INNER JOIN dbo.FacturaCab fcr
+    ON fcr.FacturaId = fc.FacturaId
 LEFT JOIN dbo.Empresa e
     ON e.EmpresaId = fc.EmpresaId
 LEFT JOIN dbo.ECFSucursalConfig sc
@@ -449,6 +466,7 @@ WHERE fc.FacturaId = @FacturaId;", cn);
                 ProvinciaCompradorSnapshot = rd["ProvinciaCompradorSnapshot"] == DBNull.Value ? null : Convert.ToString(rd["ProvinciaCompradorSnapshot"]),
                 TipoPagoECFHeader = rd["TipoPagoECFHeader"] == DBNull.Value ? null : Convert.ToInt32(rd["TipoPagoECFHeader"]),
                 FechaLimitePago = rd["FechaLimitePago"] == DBNull.Value ? null : Convert.ToDateTime(rd["FechaLimitePago"]),
+                FechaVencimientoSecuencia = rd["FechaVencimientoSecuencia"] == DBNull.Value ? null : Convert.ToDateTime(rd["FechaVencimientoSecuencia"]),
 
                 TotalDescuento = rd["TotalDescuento"] == DBNull.Value ? null : Convert.ToDecimal(rd["TotalDescuento"]),
                 TotalImpuesto = rd["TotalImpuesto"] == DBNull.Value ? null : Convert.ToDecimal(rd["TotalImpuesto"]),
@@ -562,6 +580,7 @@ ORDER BY ISNULL(NumeroLineaECF, 999999), FacturaDetId;", cn);
             public string? ProvinciaCompradorSnapshot { get; set; }
             public int? TipoPagoECFHeader { get; set; }
             public DateTime? FechaLimitePago { get; set; }
+            public DateTime? FechaVencimientoSecuencia { get; set; }
 
             public decimal? TotalDescuento { get; set; }
             public decimal? TotalImpuesto { get; set; }

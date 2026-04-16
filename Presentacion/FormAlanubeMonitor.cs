@@ -254,8 +254,8 @@ namespace Andloe.Presentacion
                 if (facturaId <= 0)
                     throw new Exception("FacturaId inválido.");
 
-                if (tipo is not 31 and not 32)
-                    throw new Exception("Alanube por ahora solo está preparado para E31 y E32.");
+                if (tipo <= 0)
+                    throw new Exception("TipoECF inválido.");
 
                 if (string.IsNullOrWhiteSpace(encf))
                     throw new Exception("La factura no tiene eNCF.");
@@ -265,18 +265,20 @@ namespace Andloe.Presentacion
                 var resp = _alanube.EnviarFactura(facturaId);
 
                 var track = resp?.GetTrackOrId() ?? "";
-                var status = resp?.Status ?? "";
-                var legal = resp?.LegalStatus ?? "";
-                var mensaje = resp?.Message ?? "";
+                var estado = resp?.Status ?? resp?.LegalStatus ?? "OK";
+
+                _repo.GuardarRespuestaAlanubePorFactura(
+                    facturaId,
+                    track,
+                    resp?.Status,
+                    resp?.LegalStatus,
+                    null,
+                    resp?.Message,
+                    resp?.RawJson
+                );
 
                 MessageBox.Show(
-                    $"Enviado a Alanube ✅\n\n" +
-                    $"FacturaId: {facturaId}\n" +
-                    $"eNCF: {encf}\n" +
-                    $"TrackId: {track}\n\n" +
-                    $"Status: {status}\n" +
-                    $"LegalStatus: {legal}\n" +
-                    (string.IsNullOrWhiteSpace(mensaje) ? "" : $"\nMensaje: {mensaje}"),
+                    $"Enviado a Alanube ✅\n\nTrack/Id: {track}\nEstado: {estado}",
                     "Alanube",
                     MessageBoxButtons.OK,
                     MessageBoxIcon.Information);
@@ -306,15 +308,14 @@ namespace Andloe.Presentacion
             var facturaId = SafeInt(GetCell("FacturaId"));
             var tipo = SafeInt(GetCell("TipoECF"));
             var trackId = SafeStr(GetCell("TrackId")) ?? "";
-            var encf = SafeStr(GetCell("ENCF")) ?? "";
 
             try
             {
                 if (facturaId <= 0)
                     throw new Exception("FacturaId inválido.");
 
-                if (tipo is not 31 and not 32)
-                    throw new Exception("Alanube por ahora solo está preparado para E31 y E32.");
+                if (tipo <= 0)
+                    throw new Exception("TipoECF inválido.");
 
                 if (string.IsNullOrWhiteSpace(trackId))
                     throw new Exception("No hay TrackId. Primero envía a Alanube.");
@@ -323,27 +324,25 @@ namespace Andloe.Presentacion
 
                 var resp = _alanube.ConsultarFactura(facturaId);
 
+                _repo.RegistrarConsultaAlanubePorFactura(
+                    facturaId,
+                    resp?.Status,
+                    resp?.LegalStatus,
+                    resp?.Code,
+                    resp?.Message,
+                    resp?.RawJson
+                );
+
                 var estado = resp?.Status ?? "";
                 var legal = resp?.LegalStatus ?? "";
                 var codigo = resp?.Code ?? "";
                 var mensaje = resp?.Message ?? "";
-                var raw = resp?.RawJson ?? "";
 
                 MessageBox.Show(
-    $"Consulta Alanube ✅\n\n" +
-    $"FacturaId: {facturaId}\n" +
-    $"eNCF: {encf}\n" +
-    $"TrackId: {trackId}\n\n" +
-    $"Status: {estado}\n" +
-    $"LegalStatus: {legal}\n" +
-    $"Code: {codigo}\n\n" +
-    $"Mensaje:\n{mensaje}" +
-    (string.IsNullOrWhiteSpace(raw) ? "" : $"\n\nRawJson:\n{raw}"),
-    "Alanube",
-    MessageBoxButtons.OK,
-    MessageBoxIcon.Information
-);
-
+                    $"Consulta Alanube ✅\n\nStatus: {estado}\nLegalStatus: {legal}\nCode: {codigo}\nMensaje: {mensaje}",
+                    "Alanube",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Information);
 
                 Refrescar();
             }
@@ -406,7 +405,10 @@ namespace Andloe.Presentacion
                 if (facturaId <= 0)
                     throw new Exception("FacturaId inválido.");
 
-                var json = SafeStr(GetCell("UltimoError")) ?? "(Sin respuesta almacenada)";
+                var json = SafeStr(GetCell("XmlRespuesta"))
+           ?? SafeStr(GetCell("RespuestaDGII"))
+           ?? SafeStr(GetCell("UltimoError"))
+           ?? "(Sin respuesta almacenada)";
 
                 if (string.IsNullOrWhiteSpace(json))
                     json = SafeStr(GetCell("UltimoError")) ?? "(Sin respuesta almacenada)";

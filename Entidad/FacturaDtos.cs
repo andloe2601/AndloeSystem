@@ -27,6 +27,9 @@ namespace Andloe.Entidad.Facturacion
         public string? ENCF { get; set; }
         public string? TrackId { get; set; }
         public string? CodigoSeguridad { get; set; }
+        public int? TipoPagoECFHeader { get; set; }
+        public DateTime? FechaLimitePago { get; set; }
+        public DateTime? FechaVencimientoSecuencia { get; set; }
     }
 
     public class FacturaDetDto

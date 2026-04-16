@@ -186,6 +186,21 @@ ORDER BY CASE WHEN CajaId IS NULL THEN 1 ELSE 0 END, RangoId DESC;
             return Convert.ToDateTime(result);
         }
 
+        public void SetFechaVencimientoSecuenciaAlanube(int facturaId, DateTime fecha)
+        {
+            using var cn = Db.GetOpenConnection();
+
+            using var cmd = new SqlCommand(@"
+UPDATE dbo.FacturaCab
+SET FechaVencimientoSecuencia = @Fecha
+WHERE FacturaId = @FacturaId;", cn);
+
+            cmd.Parameters.Add("@FacturaId", SqlDbType.Int).Value = facturaId;
+            cmd.Parameters.Add("@Fecha", SqlDbType.Date).Value = fecha.Date;
+
+            cmd.ExecuteNonQuery();
+        }
+
         // ============================================================
         // ✅ ANULACION: REVERSO INVENTARIO (FAC)
         // ============================================================
@@ -2859,9 +2874,10 @@ SELECT
     ClienteId, NombreCliente, DocumentoCliente," + (hasDir ? " DireccionCliente," : "") + (hasVen ? " CodVendedor," : "") + @"
     ISNULL(SubTotal,0), ISNULL(TotalDescuento,0), ISNULL(TotalImpuesto,0), ISNULL(TotalGeneral,0),
     TipoPago, TerminoPagoId, DiasCredito, Estado, Observacion,
-    eNCF, TrackId, CodigoSeguridad
+    eNCF, TrackId, CodigoSeguridad,
+    TipoPagoECFHeader, FechaLimitePago, FechaVencimientoSecuencia
 FROM dbo.FacturaCab
-WHERE FacturaId=@id;";
+WHERE FacturaId = @id;";
 
             using var cmd = new SqlCommand(sql, cn);
             cmd.Parameters.Add("@id", SqlDbType.Int).Value = facturaId;
@@ -2928,6 +2944,10 @@ WHERE FacturaId=@id;";
 
             dto.CodigoSeguridad = rd.IsDBNull(i) ? null : rd.GetString(i);
             i++;
+
+            dto.TipoPagoECFHeader = SafeGetIntN(rd, i++);
+            dto.FechaLimitePago = SafeGetDateTimeN(rd, i++);
+            dto.FechaVencimientoSecuencia = SafeGetDateTimeN(rd, i++);
 
             return dto;
         }

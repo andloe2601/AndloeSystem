@@ -283,11 +283,13 @@ namespace Andloe.Presentacion
                     tipo = FacturaRepository.TIPO_COT;
 
                 var fv = new FormFacturaV();
-
                 fv.SetAutoNuevoDocumento(tipo);
 
+                fv.TopLevel = false;
+                fv.FormBorderStyle = FormBorderStyle.None;
+                fv.Dock = DockStyle.Fill;
+
                 AbrirComoHijoEnPrincipal(fv);
-                Close();
             }
             catch (Exception ex)
             {
@@ -308,6 +310,10 @@ namespace Andloe.Presentacion
                 if (facturaId <= 0) return;
 
                 var fv = new FormFacturaV(facturaId);
+                fv.TopLevel = false;
+                fv.FormBorderStyle = FormBorderStyle.None;
+                fv.Dock = DockStyle.Fill;
+
                 AbrirComoHijoEnPrincipal(fv);
             }
             catch (Exception ex)
@@ -320,7 +326,12 @@ namespace Andloe.Presentacion
         {
             Form? principal = null;
 
-            try { principal = FindForm(); } catch { }
+            try { principal = MdiParent; } catch { }
+
+            if (principal == null)
+            {
+                try { principal = FindForm(); } catch { }
+            }
 
             if (principal == null || principal.GetType().Name != "FormPrincipal")
             {
@@ -335,14 +346,20 @@ namespace Andloe.Presentacion
                 return;
             }
 
-            var mi = principal.GetType().GetMethod("OpenChild", BindingFlags.Instance | BindingFlags.NonPublic);
+            var mi = principal.GetType().GetMethod(
+                "OpenChild",
+                BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+
             if (mi != null)
             {
                 mi.Invoke(principal, new object[] { child });
+                Close();
                 return;
             }
 
+            child.MdiParent = principal;
             child.Show();
+            Close();
         }
     }
 }

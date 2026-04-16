@@ -136,7 +136,7 @@ namespace Logica
             var doc = _ecfSqlRepository.ObtenerDocumentoPorFactura(facturaId);
             if (doc == null || string.IsNullOrWhiteSpace(doc.XmlFirmado))
                 throw new InvalidOperationException("La factura no tiene XML firmado.");
-
+            
             var trackSimulado = $"LOCAL-{facturaId}-{DateTime.Now:yyyyMMddHHmmss}";
 
             _ecfDocumentoRepository.ActualizarTrackingYRespuesta(

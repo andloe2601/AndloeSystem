@@ -552,7 +552,7 @@ namespace Andloe.Presentacion
             pnlTop.Location = new Point(12, 70);
             pnlTop.Name = "pnlTop";
             pnlTop.Padding = new Padding(0, 8, 0, 10);
-            pnlTop.Size = new Size(1539, 344);
+            pnlTop.Size = new Size(1539, 300);
             pnlTop.TabIndex = 2;
             // 
             // cardTop
@@ -730,7 +730,7 @@ namespace Andloe.Presentacion
             tblRightWrap.Location = new Point(790, 3);
             tblRightWrap.Name = "tblRightWrap";
             tblRightWrap.RowCount = 2;
-            tblRightWrap.RowStyles.Add(new RowStyle(SizeType.Absolute, 71F));
+            tblRightWrap.RowStyles.Add(new RowStyle(SizeType.Absolute, 64F));
             tblRightWrap.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
             tblRightWrap.Size = new Size(722, 296);
             tblRightWrap.TabIndex = 1;
@@ -749,7 +749,7 @@ namespace Andloe.Presentacion
             // tblRight
             // 
             tblRight.ColumnCount = 2;
-            tblRight.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 180F));
+            tblRight.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 150F));
             tblRight.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
             tblRight.Controls.Add(lblFechaRegistro, 0, 0);
             tblRight.Controls.Add(dtpFechaRegistro, 1, 0);
@@ -767,12 +767,12 @@ namespace Andloe.Presentacion
             tblRight.Location = new Point(0, 9);
             tblRight.Name = "tblRight";
             tblRight.RowCount = 6;
-            tblRight.RowStyles.Add(new RowStyle(SizeType.Absolute, 32F));
-            tblRight.RowStyles.Add(new RowStyle(SizeType.Absolute, 32F));
-            tblRight.RowStyles.Add(new RowStyle(SizeType.Absolute, 32F));
-            tblRight.RowStyles.Add(new RowStyle(SizeType.Absolute, 32F));
-            tblRight.RowStyles.Add(new RowStyle(SizeType.Absolute, 32F));
-            tblRight.RowStyles.Add(new RowStyle(SizeType.Absolute, 32F));
+            tblRight.RowStyles.Add(new RowStyle(SizeType.Absolute, 36F));
+            tblRight.RowStyles.Add(new RowStyle(SizeType.Absolute, 36F));
+            tblRight.RowStyles.Add(new RowStyle(SizeType.Absolute, 36F));
+            tblRight.RowStyles.Add(new RowStyle(SizeType.Absolute, 36F));
+            tblRight.RowStyles.Add(new RowStyle(SizeType.Absolute, 36F));
+            tblRight.RowStyles.Add(new RowStyle(SizeType.Absolute, 36F));
             tblRight.Size = new Size(716, 210);
             tblRight.TabIndex = 0;
             // 
@@ -786,6 +786,9 @@ namespace Andloe.Presentacion
             // 
             // dtpFechaRegistro
             // 
+
+
+
             dtpFechaRegistro.Dock = DockStyle.Fill;
             dtpFechaRegistro.Enabled = false;
             dtpFechaRegistro.Format = DateTimePickerFormat.Short;
@@ -1235,6 +1238,18 @@ namespace Andloe.Presentacion
             {
                 e.Graphics.DrawRectangle(pen, r);
             }
+        }
+
+        private void StyleCombo(ComboBox cbo)
+        {
+            cbo.DropDownStyle = ComboBoxStyle.DropDownList;
+            cbo.FlatStyle = FlatStyle.Flat;
+            cbo.BackColor = Color.White;
+            cbo.ForeColor = Color.FromArgb(25, 25, 25);
+            cbo.Font = new Font("Segoe UI", 9F, FontStyle.Regular);
+            cbo.Margin = new Padding(3, 3, 3, 3);
+            cbo.IntegralHeight = false;
+            cbo.Height = 32;
         }
 
         // ============================
