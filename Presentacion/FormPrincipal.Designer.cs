@@ -29,6 +29,7 @@
             btnKardex = new Button();
             btnGrpInventario = new Button();
             pnlProducto = new Panel();
+            BtnEtiquetasBarras = new Button();
             btnPromosProducto = new Button();
             btnProductos = new Button();
             btnGrpProducto = new Button();
@@ -59,7 +60,6 @@
             panelTop = new Panel();
             lblTitle = new Label();
             panelContent = new Panel();
-            BtnEtiquetasBarras = new Button();
             panelSidebar.SuspendLayout();
             pnlConfiguracion.SuspendLayout();
             pnlNomina.SuspendLayout();
@@ -97,7 +97,7 @@
             panelSidebar.Location = new Point(0, 0);
             panelSidebar.Name = "panelSidebar";
             panelSidebar.Padding = new Padding(12, 16, 12, 12);
-            panelSidebar.Size = new Size(260, 801);
+            panelSidebar.Size = new Size(214, 801);
             panelSidebar.TabIndex = 0;
             // 
             // btnSalir
@@ -105,7 +105,7 @@
             btnSalir.Dock = DockStyle.Bottom;
             btnSalir.Location = new Point(12, 1305);
             btnSalir.Name = "btnSalir";
-            btnSalir.Size = new Size(219, 40);
+            btnSalir.Size = new Size(173, 40);
             btnSalir.TabIndex = 99;
             btnSalir.Text = "Salir";
             btnSalir.UseVisualStyleBackColor = true;
@@ -120,7 +120,7 @@
             pnlConfiguracion.Dock = DockStyle.Top;
             pnlConfiguracion.Location = new Point(12, 1169);
             pnlConfiguracion.Name = "pnlConfiguracion";
-            pnlConfiguracion.Size = new Size(219, 148);
+            pnlConfiguracion.Size = new Size(173, 148);
             pnlConfiguracion.TabIndex = 16;
             pnlConfiguracion.Visible = false;
             // 
@@ -129,7 +129,7 @@
             btnConexion.Dock = DockStyle.Top;
             btnConexion.Location = new Point(0, 108);
             btnConexion.Name = "btnConexion";
-            btnConexion.Size = new Size(219, 36);
+            btnConexion.Size = new Size(173, 36);
             btnConexion.TabIndex = 3;
             btnConexion.Text = "Conexión";
             btnConexion.UseVisualStyleBackColor = true;
@@ -140,7 +140,7 @@
             btnConfigSistema.Dock = DockStyle.Top;
             btnConfigSistema.Location = new Point(0, 72);
             btnConfigSistema.Name = "btnConfigSistema";
-            btnConfigSistema.Size = new Size(219, 36);
+            btnConfigSistema.Size = new Size(173, 36);
             btnConfigSistema.TabIndex = 2;
             btnConfigSistema.Text = "Sistema";
             btnConfigSistema.UseVisualStyleBackColor = true;
@@ -151,7 +151,7 @@
             btnUsuarios.Dock = DockStyle.Top;
             btnUsuarios.Location = new Point(0, 36);
             btnUsuarios.Name = "btnUsuarios";
-            btnUsuarios.Size = new Size(219, 36);
+            btnUsuarios.Size = new Size(173, 36);
             btnUsuarios.TabIndex = 1;
             btnUsuarios.Text = "Usuarios";
             btnUsuarios.UseVisualStyleBackColor = true;
@@ -162,7 +162,7 @@
             btnConfiguracionContable.Dock = DockStyle.Top;
             btnConfiguracionContable.Location = new Point(0, 0);
             btnConfiguracionContable.Name = "btnConfiguracionContable";
-            btnConfiguracionContable.Size = new Size(219, 36);
+            btnConfiguracionContable.Size = new Size(173, 36);
             btnConfiguracionContable.TabIndex = 0;
             btnConfiguracionContable.Text = "Configuración Contable";
             btnConfiguracionContable.UseVisualStyleBackColor = true;
@@ -173,7 +173,7 @@
             btnGrpConfiguracion.Dock = DockStyle.Top;
             btnGrpConfiguracion.Location = new Point(12, 1127);
             btnGrpConfiguracion.Name = "btnGrpConfiguracion";
-            btnGrpConfiguracion.Size = new Size(219, 42);
+            btnGrpConfiguracion.Size = new Size(173, 42);
             btnGrpConfiguracion.TabIndex = 15;
             btnGrpConfiguracion.Text = "Configuración";
             btnGrpConfiguracion.UseVisualStyleBackColor = true;
@@ -185,7 +185,7 @@
             pnlNomina.Dock = DockStyle.Top;
             pnlNomina.Location = new Point(12, 1089);
             pnlNomina.Name = "pnlNomina";
-            pnlNomina.Size = new Size(219, 38);
+            pnlNomina.Size = new Size(173, 38);
             pnlNomina.TabIndex = 14;
             pnlNomina.Visible = false;
             // 
@@ -194,7 +194,7 @@
             btnNomina.Dock = DockStyle.Top;
             btnNomina.Location = new Point(0, 0);
             btnNomina.Name = "btnNomina";
-            btnNomina.Size = new Size(219, 36);
+            btnNomina.Size = new Size(173, 36);
             btnNomina.TabIndex = 0;
             btnNomina.Text = "Empleados / Nómina (pendiente)";
             btnNomina.UseVisualStyleBackColor = true;
@@ -205,7 +205,7 @@
             btnGrpNomina.Dock = DockStyle.Top;
             btnGrpNomina.Location = new Point(12, 1047);
             btnGrpNomina.Name = "btnGrpNomina";
-            btnGrpNomina.Size = new Size(219, 42);
+            btnGrpNomina.Size = new Size(173, 42);
             btnGrpNomina.TabIndex = 13;
             btnGrpNomina.Text = "Nómina";
             btnGrpNomina.UseVisualStyleBackColor = true;
@@ -218,7 +218,7 @@
             pnlInventario.Dock = DockStyle.Top;
             pnlInventario.Location = new Point(12, 971);
             pnlInventario.Name = "pnlInventario";
-            pnlInventario.Size = new Size(219, 76);
+            pnlInventario.Size = new Size(173, 76);
             pnlInventario.TabIndex = 12;
             pnlInventario.Visible = false;
             // 
@@ -227,7 +227,7 @@
             btnInvMov.Dock = DockStyle.Top;
             btnInvMov.Location = new Point(0, 36);
             btnInvMov.Name = "btnInvMov";
-            btnInvMov.Size = new Size(219, 36);
+            btnInvMov.Size = new Size(173, 36);
             btnInvMov.TabIndex = 1;
             btnInvMov.Text = "Entrada / Salida";
             btnInvMov.UseVisualStyleBackColor = true;
@@ -238,7 +238,7 @@
             btnKardex.Dock = DockStyle.Top;
             btnKardex.Location = new Point(0, 0);
             btnKardex.Name = "btnKardex";
-            btnKardex.Size = new Size(219, 36);
+            btnKardex.Size = new Size(173, 36);
             btnKardex.TabIndex = 0;
             btnKardex.Text = "Kardex";
             btnKardex.UseVisualStyleBackColor = true;
@@ -249,7 +249,7 @@
             btnGrpInventario.Dock = DockStyle.Top;
             btnGrpInventario.Location = new Point(12, 929);
             btnGrpInventario.Name = "btnGrpInventario";
-            btnGrpInventario.Size = new Size(219, 42);
+            btnGrpInventario.Size = new Size(173, 42);
             btnGrpInventario.TabIndex = 11;
             btnGrpInventario.Text = "Inventario";
             btnGrpInventario.UseVisualStyleBackColor = true;
@@ -263,16 +263,27 @@
             pnlProducto.Dock = DockStyle.Top;
             pnlProducto.Location = new Point(12, 817);
             pnlProducto.Name = "pnlProducto";
-            pnlProducto.Size = new Size(219, 112);
+            pnlProducto.Size = new Size(173, 112);
             pnlProducto.TabIndex = 10;
             pnlProducto.Visible = false;
+            // 
+            // BtnEtiquetasBarras
+            // 
+            BtnEtiquetasBarras.Dock = DockStyle.Top;
+            BtnEtiquetasBarras.Location = new Point(0, 72);
+            BtnEtiquetasBarras.Name = "BtnEtiquetasBarras";
+            BtnEtiquetasBarras.Size = new Size(173, 36);
+            BtnEtiquetasBarras.TabIndex = 2;
+            BtnEtiquetasBarras.Text = "Etiquetas Cod_Barra";
+            BtnEtiquetasBarras.UseVisualStyleBackColor = true;
+            BtnEtiquetasBarras.Click += BtnEtiquetasBarras_Click;
             // 
             // btnPromosProducto
             // 
             btnPromosProducto.Dock = DockStyle.Top;
             btnPromosProducto.Location = new Point(0, 36);
             btnPromosProducto.Name = "btnPromosProducto";
-            btnPromosProducto.Size = new Size(219, 36);
+            btnPromosProducto.Size = new Size(173, 36);
             btnPromosProducto.TabIndex = 1;
             btnPromosProducto.Text = "Promos / Descuentos";
             btnPromosProducto.UseVisualStyleBackColor = true;
@@ -283,7 +294,7 @@
             btnProductos.Dock = DockStyle.Top;
             btnProductos.Location = new Point(0, 0);
             btnProductos.Name = "btnProductos";
-            btnProductos.Size = new Size(219, 36);
+            btnProductos.Size = new Size(173, 36);
             btnProductos.TabIndex = 0;
             btnProductos.Text = "Productos";
             btnProductos.UseVisualStyleBackColor = true;
@@ -294,7 +305,7 @@
             btnGrpProducto.Dock = DockStyle.Top;
             btnGrpProducto.Location = new Point(12, 775);
             btnGrpProducto.Name = "btnGrpProducto";
-            btnGrpProducto.Size = new Size(219, 42);
+            btnGrpProducto.Size = new Size(173, 42);
             btnGrpProducto.TabIndex = 9;
             btnGrpProducto.Text = "Producto";
             btnGrpProducto.UseVisualStyleBackColor = true;
@@ -306,7 +317,7 @@
             pnlCompra.Dock = DockStyle.Top;
             pnlCompra.Location = new Point(12, 737);
             pnlCompra.Name = "pnlCompra";
-            pnlCompra.Size = new Size(219, 38);
+            pnlCompra.Size = new Size(173, 38);
             pnlCompra.TabIndex = 8;
             pnlCompra.Visible = false;
             // 
@@ -315,7 +326,7 @@
             btnCompra.Dock = DockStyle.Top;
             btnCompra.Location = new Point(0, 0);
             btnCompra.Name = "btnCompra";
-            btnCompra.Size = new Size(219, 36);
+            btnCompra.Size = new Size(173, 36);
             btnCompra.TabIndex = 0;
             btnCompra.Text = "Órdenes / Facturas (pendiente)";
             btnCompra.UseVisualStyleBackColor = true;
@@ -326,7 +337,7 @@
             btnGrpCompra.Dock = DockStyle.Top;
             btnGrpCompra.Location = new Point(12, 695);
             btnGrpCompra.Name = "btnGrpCompra";
-            btnGrpCompra.Size = new Size(219, 42);
+            btnGrpCompra.Size = new Size(173, 42);
             btnGrpCompra.TabIndex = 7;
             btnGrpCompra.Text = "Compra";
             btnGrpCompra.UseVisualStyleBackColor = true;
@@ -347,27 +358,24 @@
             pnlVenta.Dock = DockStyle.Top;
             pnlVenta.Location = new Point(12, 334);
             pnlVenta.Name = "pnlVenta";
-            pnlVenta.Size = new Size(219, 361);
+            pnlVenta.Size = new Size(173, 361);
             pnlVenta.TabIndex = 6;
             pnlVenta.Visible = false;
             // 
             // BtnConfiguracionVentas
             // 
-            BtnEtiquetasBarras.Dock = DockStyle.Top;
-            BtnEtiquetasBarras.Location = new Point(0, 72);
-            BtnEtiquetasBarras.Name = "BtnEtiquetasBarras";
-            BtnEtiquetasBarras.Size = new Size(219, 36);
-            BtnEtiquetasBarras.TabIndex = 2;
-            BtnEtiquetasBarras.Text = "Etiquetas Cod_Barra";
-            BtnEtiquetasBarras.UseVisualStyleBackColor = true;
-            BtnEtiquetasBarras.Click += BtnEtiquetasBarras_Click;
+            BtnConfiguracionVentas.Location = new Point(0, 321);
+            BtnConfiguracionVentas.Name = "BtnConfiguracionVentas";
+            BtnConfiguracionVentas.Size = new Size(216, 34);
+            BtnConfiguracionVentas.TabIndex = 0;
+            BtnConfiguracionVentas.Text = "Configuracion Ventas";
             // 
             // BtnReporte
             // 
             BtnReporte.Dock = DockStyle.Top;
             BtnReporte.Location = new Point(0, 288);
             BtnReporte.Name = "BtnReporte";
-            BtnReporte.Size = new Size(219, 36);
+            BtnReporte.Size = new Size(173, 36);
             BtnReporte.TabIndex = 10;
             BtnReporte.Text = "Reportes";
             BtnReporte.UseVisualStyleBackColor = true;
@@ -378,7 +386,7 @@
             BtnRecibo.Dock = DockStyle.Top;
             BtnRecibo.Location = new Point(0, 252);
             BtnRecibo.Name = "BtnRecibo";
-            BtnRecibo.Size = new Size(219, 36);
+            BtnRecibo.Size = new Size(173, 36);
             BtnRecibo.TabIndex = 9;
             BtnRecibo.Text = "Recibo Pagos";
             BtnRecibo.UseVisualStyleBackColor = true;
@@ -389,7 +397,7 @@
             BtnNc.Dock = DockStyle.Top;
             BtnNc.Location = new Point(0, 216);
             BtnNc.Name = "BtnNc";
-            BtnNc.Size = new Size(219, 36);
+            BtnNc.Size = new Size(173, 36);
             BtnNc.TabIndex = 8;
             BtnNc.Text = "Nota Credito";
             BtnNc.UseVisualStyleBackColor = true;
@@ -400,7 +408,7 @@
             btnECN.Dock = DockStyle.Top;
             btnECN.Location = new Point(0, 180);
             btnECN.Name = "btnECN";
-            btnECN.Size = new Size(219, 36);
+            btnECN.Size = new Size(173, 36);
             btnECN.TabIndex = 6;
             btnECN.Text = "Histórico E-CF";
             btnECN.UseVisualStyleBackColor = true;
@@ -411,7 +419,7 @@
             btnCierresHistorico.Dock = DockStyle.Top;
             btnCierresHistorico.Location = new Point(0, 144);
             btnCierresHistorico.Name = "btnCierresHistorico";
-            btnCierresHistorico.Size = new Size(219, 36);
+            btnCierresHistorico.Size = new Size(173, 36);
             btnCierresHistorico.TabIndex = 5;
             btnCierresHistorico.Text = "Histórico de Cierres";
             btnCierresHistorico.UseVisualStyleBackColor = true;
@@ -422,7 +430,7 @@
             btnCajas.Dock = DockStyle.Top;
             btnCajas.Location = new Point(0, 108);
             btnCajas.Name = "btnCajas";
-            btnCajas.Size = new Size(219, 36);
+            btnCajas.Size = new Size(173, 36);
             btnCajas.TabIndex = 3;
             btnCajas.Text = "Factura";
             btnCajas.UseVisualStyleBackColor = true;
@@ -433,7 +441,7 @@
             btnVendedores.Dock = DockStyle.Top;
             btnVendedores.Location = new Point(0, 72);
             btnVendedores.Name = "btnVendedores";
-            btnVendedores.Size = new Size(219, 36);
+            btnVendedores.Size = new Size(173, 36);
             btnVendedores.TabIndex = 2;
             btnVendedores.Text = "Catálogo de Vendedores";
             btnVendedores.UseVisualStyleBackColor = true;
@@ -444,7 +452,7 @@
             btnClientes.Dock = DockStyle.Top;
             btnClientes.Location = new Point(0, 36);
             btnClientes.Name = "btnClientes";
-            btnClientes.Size = new Size(219, 36);
+            btnClientes.Size = new Size(173, 36);
             btnClientes.TabIndex = 1;
             btnClientes.Text = "Clientes";
             btnClientes.UseVisualStyleBackColor = true;
@@ -455,7 +463,7 @@
             btnPOS.Dock = DockStyle.Top;
             btnPOS.Location = new Point(0, 0);
             btnPOS.Name = "btnPOS";
-            btnPOS.Size = new Size(219, 36);
+            btnPOS.Size = new Size(173, 36);
             btnPOS.TabIndex = 0;
             btnPOS.Text = "POS";
             btnPOS.UseVisualStyleBackColor = true;
@@ -466,7 +474,7 @@
             btnGrpVenta.Dock = DockStyle.Top;
             btnGrpVenta.Location = new Point(12, 292);
             btnGrpVenta.Name = "btnGrpVenta";
-            btnGrpVenta.Size = new Size(219, 42);
+            btnGrpVenta.Size = new Size(173, 42);
             btnGrpVenta.TabIndex = 5;
             btnGrpVenta.Text = "Venta";
             btnGrpVenta.UseVisualStyleBackColor = true;
@@ -480,7 +488,7 @@
             pnlContabilidad.Dock = DockStyle.Top;
             pnlContabilidad.Location = new Point(12, 182);
             pnlContabilidad.Name = "pnlContabilidad";
-            pnlContabilidad.Size = new Size(219, 110);
+            pnlContabilidad.Size = new Size(173, 110);
             pnlContabilidad.TabIndex = 4;
             pnlContabilidad.Visible = false;
             // 
@@ -489,7 +497,7 @@
             btnContabilidad.Dock = DockStyle.Top;
             btnContabilidad.Location = new Point(0, 72);
             btnContabilidad.Name = "btnContabilidad";
-            btnContabilidad.Size = new Size(219, 36);
+            btnContabilidad.Size = new Size(173, 36);
             btnContabilidad.TabIndex = 2;
             btnContabilidad.Text = "Asientos / Reportes (pendiente)";
             btnContabilidad.UseVisualStyleBackColor = true;
@@ -500,7 +508,7 @@
             btnCatalogoCuentas.Dock = DockStyle.Top;
             btnCatalogoCuentas.Location = new Point(0, 36);
             btnCatalogoCuentas.Name = "btnCatalogoCuentas";
-            btnCatalogoCuentas.Size = new Size(219, 36);
+            btnCatalogoCuentas.Size = new Size(173, 36);
             btnCatalogoCuentas.TabIndex = 1;
             btnCatalogoCuentas.Text = "Catálogo de Cuentas";
             btnCatalogoCuentas.UseVisualStyleBackColor = true;
@@ -511,7 +519,7 @@
             btnContabilidadMovimiento.Dock = DockStyle.Top;
             btnContabilidadMovimiento.Location = new Point(0, 0);
             btnContabilidadMovimiento.Name = "btnContabilidadMovimiento";
-            btnContabilidadMovimiento.Size = new Size(219, 36);
+            btnContabilidadMovimiento.Size = new Size(173, 36);
             btnContabilidadMovimiento.TabIndex = 0;
             btnContabilidadMovimiento.Text = "Asientos (Movimientos)";
             btnContabilidadMovimiento.UseVisualStyleBackColor = true;
@@ -522,7 +530,7 @@
             btnGrpContabilidad.Dock = DockStyle.Top;
             btnGrpContabilidad.Location = new Point(12, 140);
             btnGrpContabilidad.Name = "btnGrpContabilidad";
-            btnGrpContabilidad.Size = new Size(219, 42);
+            btnGrpContabilidad.Size = new Size(173, 42);
             btnGrpContabilidad.TabIndex = 3;
             btnGrpContabilidad.Text = "Contabilidad";
             btnGrpContabilidad.UseVisualStyleBackColor = true;
@@ -534,7 +542,7 @@
             pnlDashboard.Dock = DockStyle.Top;
             pnlDashboard.Location = new Point(12, 102);
             pnlDashboard.Name = "pnlDashboard";
-            pnlDashboard.Size = new Size(219, 38);
+            pnlDashboard.Size = new Size(173, 38);
             pnlDashboard.TabIndex = 2;
             pnlDashboard.Visible = false;
             // 
@@ -543,7 +551,7 @@
             btnDashboard.Dock = DockStyle.Top;
             btnDashboard.Location = new Point(0, 0);
             btnDashboard.Name = "btnDashboard";
-            btnDashboard.Size = new Size(219, 36);
+            btnDashboard.Size = new Size(173, 36);
             btnDashboard.TabIndex = 0;
             btnDashboard.Text = "Inicio / KPIs";
             btnDashboard.UseVisualStyleBackColor = true;
@@ -554,7 +562,7 @@
             btnGrpDashboard.Dock = DockStyle.Top;
             btnGrpDashboard.Location = new Point(12, 60);
             btnGrpDashboard.Name = "btnGrpDashboard";
-            btnGrpDashboard.Size = new Size(219, 42);
+            btnGrpDashboard.Size = new Size(173, 42);
             btnGrpDashboard.TabIndex = 1;
             btnGrpDashboard.Text = "Dashboard";
             btnGrpDashboard.UseVisualStyleBackColor = true;
@@ -566,7 +574,7 @@
             lblBrand.Location = new Point(12, 16);
             lblBrand.Name = "lblBrand";
             lblBrand.Padding = new Padding(0, 0, 0, 12);
-            lblBrand.Size = new Size(219, 44);
+            lblBrand.Size = new Size(173, 44);
             lblBrand.TabIndex = 0;
             lblBrand.Text = "ANDLOE ERP";
             lblBrand.TextAlign = ContentAlignment.MiddleLeft;
@@ -575,9 +583,9 @@
             // 
             panelTop.Controls.Add(lblTitle);
             panelTop.Dock = DockStyle.Top;
-            panelTop.Location = new Point(260, 0);
+            panelTop.Location = new Point(214, 0);
             panelTop.Name = "panelTop";
-            panelTop.Size = new Size(940, 52);
+            panelTop.Size = new Size(986, 52);
             panelTop.TabIndex = 1;
             // 
             // lblTitle
@@ -592,21 +600,10 @@
             // panelContent
             // 
             panelContent.Dock = DockStyle.Fill;
-            panelContent.Location = new Point(260, 52);
+            panelContent.Location = new Point(214, 52);
             panelContent.Name = "panelContent";
-            panelContent.Size = new Size(940, 749);
+            panelContent.Size = new Size(986, 749);
             panelContent.TabIndex = 2;
-            // 
-            // BtnEtiquetasBarras
-            // 
-            BtnEtiquetasBarras.Dock = DockStyle.Top;
-            BtnEtiquetasBarras.Location = new Point(0, 72);
-            BtnEtiquetasBarras.Name = "BtnEtiquetasBarras";
-            BtnEtiquetasBarras.Size = new Size(219, 36);
-            BtnEtiquetasBarras.TabIndex = 2;
-            BtnEtiquetasBarras.Text = "Etiquetas Cod_Barra";
-            BtnEtiquetasBarras.UseVisualStyleBackColor = true;
-            BtnEtiquetasBarras.Click += BtnEtiquetasBarras_Click;
             // 
             // FormPrincipal
             // 
@@ -694,7 +691,7 @@
         private Button BtnNc;
         private Button BtnRecibo;
         private Button BtnReporte;
-        private Button BtnConfiguracionVentas;
         private Button BtnEtiquetasBarras;
+        private Button BtnConfiguracionVentas;
     }
 }

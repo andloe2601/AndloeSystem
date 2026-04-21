@@ -222,18 +222,28 @@ namespace Andloe.Logica
 
         public long CerrarVenta(
     string usuario,
-    string? clienteCodigo,
+    string clienteCodigo,
     int medioPagoId,
     decimal montoRecibido,
-    string? moneda = null,
-    int terminoPagoId = 1,
-    string? posCajaNumero = null,
-    int cajaId = 0 
-)
-
+    string moneda,
+    int terminoPagoId,
+    string posCajaNumero,
+    int cajaId,
+    int tipoECFId,
+    int tipoPagoECFId,
+    string formaPagoFiscal)
         {
             if (Carrito.Count == 0)
                 throw new InvalidOperationException("Carrito vacío.");
+
+            if (tipoECFId <= 0)
+                throw new InvalidOperationException("Debe indicar un tipo de comprobante fiscal válido.");
+
+            if (tipoPagoECFId <= 0)
+                throw new InvalidOperationException("Debe indicar un tipo de pago ECF válido.");
+
+            if (string.IsNullOrWhiteSpace(formaPagoFiscal))
+                throw new InvalidOperationException("Debe indicar una forma de pago fiscal válida.");
 
             if (string.IsNullOrWhiteSpace(clienteCodigo))
                 clienteCodigo = ConfigService.ClienteDefecto;
@@ -243,10 +253,8 @@ namespace Andloe.Logica
 
             var ahora = DateTime.Now;
 
-            // 1) Aplicar TODAS las promos al carrito (combos + individuales)
             var promosAplicadas = _promoService.AplicarPromosCarrito(Carrito, clienteCodigo);
 
-            // 2) Totales ya con descuentos
             var totales = Totales();
             var descuentoTotal = Carrito.Sum(x => x.DescuentoMonto);
 
@@ -261,9 +269,8 @@ namespace Andloe.Logica
                 Total = totales.Total,
                 DescuentoTotal = descuentoTotal,
                 Usuario = usuario,
-                Observacion = "POS",
+                Observacion = $"POS | TipoECFId={tipoECFId} | TipoPagoECFId={tipoPagoECFId} | FormaPagoFiscal={formaPagoFiscal}",
                 Estado = "FACTURADA",
-                MedioPagoId = medioPagoId,
                 TerminoPagoId = terminoPagoId,
                 MontoPago = montoRecibido,
                 MontoCambio = Math.Max(0, montoRecibido - totales.Total),
@@ -272,7 +279,8 @@ namespace Andloe.Logica
                 SubTotalMoneda = totales.Subtotal,
                 ItbisMoneda = totales.Itbis,
                 TotalMoneda = totales.Total,
-                POS_CajaNumero = posCajaNumero
+                POS_CajaNumero = posCajaNumero,
+                CajaId = cajaId
             };
 
             using var cn = Db.GetOpenConnection();
@@ -282,10 +290,8 @@ namespace Andloe.Logica
 
             try
             {
-                // 3) Cabecera de venta
                 ventaId = _ventaRepo.InsertCabecera(venta, tx);
 
-                // 4) Movimiento de inventario
                 var almOrigenId = ConfigService.AlmacenPosOrigenId;
                 var almDestinoId = ConfigService.AlmacenPosDestinoId;
 
@@ -308,21 +314,15 @@ namespace Andloe.Logica
                 };
 
                 var invMovId = _invCabRepo.InsertCabecera(movCab, tx);
-
                 var permitirNegativo = ConfigService.PermitirStockNegativo;
 
-                // ✅ Indexar promos por item (una sola vez)
                 var promosPorItem = promosAplicadas
                     .GroupBy(p => p.Item)
                     .ToDictionary(g => g.Key, g => g.Select(x => x.Promo).ToList());
 
-                // ✅ Acumular por (PromoId, ProductoCodigo) una sola vez en todo el cierre
                 var acumuladoPromoProd = new Dictionary<(int PromoId, string ProductoCodigo), (int Linea, decimal MontoTotal)>();
-
-                // ✅ Periodo calculado una vez
                 var (periodoTipo, periodoClave) = PromoRepository.PeriodoDiario(ahora);
 
-                // 5) Líneas
                 int linea = 1;
                 foreach (var it in Carrito)
                 {
@@ -364,7 +364,6 @@ namespace Andloe.Logica
 
                     _invLinRepo.InsertLinea(movLin, tx);
 
-                    // ✅ Acumular promos por (PromoId, ProductoCodigo)
                     if (promosPorItem.TryGetValue(it, out var promosItem))
                     {
                         foreach (var promo in promosItem)
@@ -375,21 +374,15 @@ namespace Andloe.Logica
                             var key = (promo.PromoId, it.ProductoCodigo);
 
                             if (acumuladoPromoProd.TryGetValue(key, out var cur))
-                            {
                                 acumuladoPromoProd[key] = (cur.Linea, cur.MontoTotal + promo.MontoDescuentoCalculado);
-                            }
                             else
-                            {
                                 acumuladoPromoProd[key] = (lineaActual, promo.MontoDescuentoCalculado);
-                            }
                         }
                     }
 
                     linea++;
                 }
 
-
-                // ✅ Registrar PromoLog + PromoTope UNA sola vez por (PromoId, ProductoCodigo)
                 foreach (var kv in acumuladoPromoProd)
                 {
                     var promoId = kv.Key.PromoId;
@@ -418,7 +411,6 @@ namespace Andloe.Logica
                     );
                 }
 
-                // ✅ A4: Asiento automático al facturar (dentro del TX)
                 _ = AsentarVentaPOS(
                     cn: cn,
                     tx: tx,
@@ -433,7 +425,6 @@ namespace Andloe.Logica
                     terminoPagoId: venta.TerminoPagoId
                 );
 
-
                 tx.Commit();
             }
             catch
@@ -442,18 +433,17 @@ namespace Andloe.Logica
                 throw;
             }
 
-            // ✅ IMPORTANTE: ya NO se registra fuera del TX (evita duplicar)
             return ventaId;
         }
 
         // ================== PAGOS POS ==================
 
         public void GuardarPagosPOS(
-            long ventaId,
-            IEnumerable<PagoLineaResult> pagos,
-            string usuario,
-            int cajaId,
-            string? cajaNumero)
+     long ventaId,
+     IEnumerable<PagoLineaResult> pagos,
+     string usuario,
+     int cajaId,
+     string? cajaNumero)
         {
             var lista = pagos?.ToList() ?? new();
             if (lista.Count == 0) return;
@@ -467,35 +457,44 @@ namespace Andloe.Logica
                 {
                     using var cmd = new SqlCommand(@"
 INSERT INTO dbo.POS_Pago
-(Fecha, MonedaCodigo, TasaCambio, Monto, MedioPagoId, Referencia, Entidad,
+(Fecha, MonedaCodigo, TasaCambio, Monto, MontoBase, FormaPagoCodigo, Referencia, Entidad,
  Observacion, Usuario, CajaId, POS_CajaNumero, VentaId, Estado)
 VALUES
-(@Fecha, @MonedaCodigo, @TasaCambio, @Monto, @MedioPagoId, @Referencia, @Entidad,
+(@Fecha, @MonedaCodigo, @TasaCambio, @Monto, @MontoBase, @FormaPagoCodigo, @Referencia, @Entidad,
  @Observacion, @Usuario, @CajaId, @POS_CajaNumero, @VentaId, @Estado);", cn, tx);
 
                     cmd.Parameters.Add("@Fecha", SqlDbType.DateTime).Value = DateTime.Now;
                     cmd.Parameters.Add("@MonedaCodigo", SqlDbType.VarChar, 3).Value = p.MonedaCodigo;
 
                     var tc = cmd.Parameters.Add("@TasaCambio", SqlDbType.Decimal);
-                    tc.Precision = 18; tc.Scale = 6; tc.Value = p.TasaCambio;
+                    tc.Precision = 18;
+                    tc.Scale = 6;
+                    tc.Value = p.TasaCambio <= 0 ? 1m : p.TasaCambio;
 
                     var monto = cmd.Parameters.Add("@Monto", SqlDbType.Decimal);
-                    monto.Precision = 18; monto.Scale = 2; monto.Value = p.MontoBase;
+                    monto.Precision = 18;
+                    monto.Scale = 2;
+                    monto.Value = p.MontoMoneda;
 
-                    cmd.Parameters.Add("@MedioPagoId", SqlDbType.Int).Value = p.MedioPagoId;
-                    cmd.Parameters.Add("@Referencia", SqlDbType.VarChar, 50).Value = "POS";
+                    var montoBase = cmd.Parameters.Add("@MontoBase", SqlDbType.Decimal);
+                    montoBase.Precision = 18;
+                    montoBase.Scale = 2;
+                    montoBase.Value = p.MontoBase;
+
+                    cmd.Parameters.Add("@FormaPagoCodigo", SqlDbType.VarChar, 2).Value = p.FormaPagoCodigo;
+                    cmd.Parameters.Add("@Referencia", SqlDbType.VarChar, 60).Value = "POS";
                     cmd.Parameters.Add("@Entidad", SqlDbType.VarChar, 80).Value = "CAJA POS";
-                    cmd.Parameters.Add("@Observacion", SqlDbType.VarChar, 200).Value = "Pago POS";
-                    cmd.Parameters.Add("@Usuario", SqlDbType.VarChar, 30).Value = usuario;
+                    cmd.Parameters.Add("@Observacion", SqlDbType.VarChar, 200).Value = $"Pago POS {p.NombreMedio}";
+                    cmd.Parameters.Add("@Usuario", SqlDbType.VarChar, 50).Value = usuario;
                     cmd.Parameters.Add("@CajaId", SqlDbType.Int).Value = cajaId;
 
                     if (string.IsNullOrWhiteSpace(cajaNumero))
-                        cmd.Parameters.Add("@POS_CajaNumero", SqlDbType.NVarChar, 10).Value = DBNull.Value;
+                        cmd.Parameters.Add("@POS_CajaNumero", SqlDbType.NVarChar, 20).Value = DBNull.Value;
                     else
-                        cmd.Parameters.Add("@POS_CajaNumero", SqlDbType.NVarChar, 10).Value = cajaNumero;
+                        cmd.Parameters.Add("@POS_CajaNumero", SqlDbType.NVarChar, 20).Value = cajaNumero;
 
                     cmd.Parameters.Add("@VentaId", SqlDbType.BigInt).Value = ventaId;
-                    cmd.Parameters.Add("@Estado", SqlDbType.VarChar, 20).Value = "APLICADO";
+                    cmd.Parameters.Add("@Estado", SqlDbType.VarChar, 12).Value = "APLICADO";
 
                     cmd.ExecuteNonQuery();
                 }
@@ -507,6 +506,49 @@ VALUES
                 tx.Rollback();
                 throw;
             }
+        }
+
+        private int ResolverMedioPagoIdDesdeFormaFiscal(string formaPagoCodigo)
+        {
+            using var cn = Db.GetOpenConnection();
+            using var cmd = new SqlCommand(@"
+SELECT TOP (1) MedioPagoId
+FROM dbo.MedioPago
+WHERE
+(
+    @FormaPagoCodigo = '1' AND Nombre LIKE '%Efectivo%'
+)
+OR
+(
+    @FormaPagoCodigo = '2' AND
+    (
+        Nombre LIKE '%Transfer%'
+        OR Nombre LIKE '%Cheque%'
+        OR Nombre LIKE '%Depósito%'
+        OR Nombre LIKE '%Deposito%'
+    )
+)
+OR
+(
+    @FormaPagoCodigo = '3' AND Nombre LIKE '%Tarjeta%'
+)
+OR
+(
+    @FormaPagoCodigo = '4' AND
+    (
+        Nombre LIKE '%Crédito%'
+        OR Nombre LIKE '%Credito%'
+    )
+);", cn);
+
+            cmd.Parameters.Add("@FormaPagoCodigo", SqlDbType.VarChar, 2).Value = formaPagoCodigo;
+
+            var val = cmd.ExecuteScalar();
+            if (val == null || val == DBNull.Value)
+                throw new InvalidOperationException(
+                    $"No se encontró un MedioPago válido en dbo.MedioPago para la forma fiscal '{formaPagoCodigo}'.");
+
+            return Convert.ToInt32(val);
         }
 
         private sealed class CajaContaCtas

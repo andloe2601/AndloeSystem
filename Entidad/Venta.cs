@@ -5,6 +5,7 @@
         public long VentaId { get; set; }
         public string NoDocumento { get; set; } = string.Empty;
         public DateTime Fecha { get; set; }
+        public int? CajaId { get; set; }
 
         public string? ClienteCodigo { get; set; }
         public int? ClienteId { get; set; }
@@ -27,7 +28,7 @@
 
         public DateTime FechaCreacion { get; set; }
 
-        public int? MedioPagoId { get; set; }
+        //public int? MedioPagoId { get; set; }
         public decimal MontoPago { get; set; }
         public decimal MontoCambio { get; set; }
 

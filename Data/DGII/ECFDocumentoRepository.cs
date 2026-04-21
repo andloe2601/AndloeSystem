@@ -518,15 +518,15 @@ UPDATE dbo.ECFDocumento
             cmd.ExecuteNonQuery();
         }
 
-        public ECFDocumento? ObtenerDocumentoPorFactura(long facturaId)
+        public ECFDocumento? ObtenerDocumentoPorFactura(int facturaId)
         {
             using var cn = Db.GetOpenConnection();
 
             using var cmd = new SqlCommand(@"
-        SELECT TOP 1 *
-        FROM ECFDocumento
-        WHERE FacturaId = @FacturaId
-        ORDER BY ECFDocumentoId DESC", cn);
+    SELECT TOP 1 *
+    FROM dbo.ECFDocumento
+    WHERE FacturaId = @FacturaId
+    ORDER BY ECFDocumentoId DESC", cn);
 
             cmd.Parameters.AddWithValue("@FacturaId", facturaId);
 
@@ -537,12 +537,21 @@ UPDATE dbo.ECFDocumento
             return new ECFDocumento
             {
                 ECFDocumentoId = Convert.ToInt64(rd["ECFDocumentoId"]),
-                FacturaId = Convert.ToInt64(rd["FacturaId"]),
-                ENCF = rd["ENCF"]?.ToString(),
-                TrackId = rd["TrackId"]?.ToString(),
-                XmlRespuesta = rd["XmlRespuesta"]?.ToString(),
-                XmlEnviado = rd["XmlEnviado"]?.ToString(),
-                EstadoDGII = rd["EstadoDGII"]?.ToString()
+                FacturaId = Convert.ToInt32(rd["FacturaId"]),
+                ENCF = rd["ENCF"] == DBNull.Value ? null : rd["ENCF"].ToString(),
+                TrackId = rd["TrackId"] == DBNull.Value ? null : rd["TrackId"].ToString(),
+                XmlRespuesta = rd["XmlRespuesta"] == DBNull.Value ? null : rd["XmlRespuesta"].ToString(),
+                XmlEnviado = rd["XmlEnviado"] == DBNull.Value ? null : rd["XmlEnviado"].ToString(),
+                EstadoDGII = rd["EstadoDGII"] == DBNull.Value ? null : rd["EstadoDGII"].ToString(),
+                TipoECF = rd["TipoECF"] == DBNull.Value ? 0 : Convert.ToInt32(rd["TipoECF"]),
+                XmlSinFirmar = rd["XmlSinFirmar"] == DBNull.Value ? null : rd["XmlSinFirmar"].ToString(),
+                XmlFirmado = rd["XmlFirmado"] == DBNull.Value ? null : rd["XmlFirmado"].ToString(),
+                FechaGenerado = rd["FechaGenerado"] == DBNull.Value ? DateTime.MinValue : Convert.ToDateTime(rd["FechaGenerado"]),
+                IntentosEnvio = rd["IntentosEnvio"] == DBNull.Value ? 0 : Convert.ToInt32(rd["IntentosEnvio"]),
+                UltimoError = rd["UltimoError"] == DBNull.Value ? null : rd["UltimoError"].ToString(),
+                MontoTotalDocumento = rd["MontoTotalDocumento"] == DBNull.Value ? null : Convert.ToDecimal(rd["MontoTotalDocumento"]),
+                EstadoProceso = rd["EstadoProceso"] == DBNull.Value ? null : rd["EstadoProceso"].ToString(),
+                Activo = rd["Activo"] != DBNull.Value && Convert.ToBoolean(rd["Activo"])
             };
         }
 

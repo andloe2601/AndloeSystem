@@ -32,8 +32,13 @@ namespace Presentation
         private Button btnNum9;
         private Button btnBorrarMonto;
 
+        private Button btnRapidoEfectivo;
+        private Button btnRapidoTarjeta;
+        private Button btnRapidoTransferencia;
+
         private Button btnAgregarLinea;
         private Button btnQuitarLinea;
+        private Button btnCompletarPendiente;
 
         private DataGridView gridPagos;
 
@@ -41,6 +46,8 @@ namespace Presentation
         private Label lblPagadoBase;
         private Label label5;
         private Label lblPendienteBase;
+        private Label label6;
+        private Label lblCambioBase;
 
         private Button btnAceptar;
         private Button btnCancelar;
@@ -70,6 +77,10 @@ namespace Presentation
             label3 = new Label();
             txtMontoMoneda = new TextBox();
 
+            btnRapidoEfectivo = new Button();
+            btnRapidoTarjeta = new Button();
+            btnRapidoTransferencia = new Button();
+
             btnNum0 = new Button();
             btnNum1 = new Button();
             btnNum2 = new Button();
@@ -84,6 +95,7 @@ namespace Presentation
 
             btnAgregarLinea = new Button();
             btnQuitarLinea = new Button();
+            btnCompletarPendiente = new Button();
 
             gridPagos = new DataGridView();
 
@@ -91,6 +103,8 @@ namespace Presentation
             lblPagadoBase = new Label();
             label5 = new Label();
             lblPendienteBase = new Label();
+            label6 = new Label();
+            lblCambioBase = new Label();
 
             btnAceptar = new Button();
             btnCancelar = new Button();
@@ -99,202 +113,304 @@ namespace Presentation
             ((System.ComponentModel.ISupportInitialize)gridPagos).BeginInit();
             SuspendLayout();
 
-            // Form
             AutoScaleMode = AutoScaleMode.Font;
-            ClientSize = new System.Drawing.Size(700, 520);
+            BackColor = System.Drawing.Color.FromArgb(245, 247, 250);
+            ClientSize = new System.Drawing.Size(980, 760);
+            Font = new System.Drawing.Font("Segoe UI", 9.5F);
+            FormBorderStyle = FormBorderStyle.FixedDialog;
+            MaximizeBox = false;
+            MinimizeBox = false;
             StartPosition = FormStartPosition.CenterParent;
             Text = "Seleccionar pagos";
             Load += FormSeleccionPago_Load;
 
-            // label1 - Total base
             label1.AutoSize = true;
-            label1.Location = new System.Drawing.Point(12, 9);
-            label1.Text = "Total (base):";
+            label1.Font = new System.Drawing.Font("Segoe UI", 12F, System.Drawing.FontStyle.Bold);
+            label1.ForeColor = System.Drawing.Color.FromArgb(31, 41, 55);
+            label1.Location = new System.Drawing.Point(20, 18);
+            label1.Text = "Total a cobrar:";
 
-            // lblTotalBase
             lblTotalBase.AutoSize = true;
-            lblTotalBase.Font = new System.Drawing.Font("Segoe UI", 10F, System.Drawing.FontStyle.Bold);
-            lblTotalBase.Location = new System.Drawing.Point(100, 7);
+            lblTotalBase.Font = new System.Drawing.Font("Segoe UI", 18F, System.Drawing.FontStyle.Bold);
+            lblTotalBase.ForeColor = System.Drawing.Color.FromArgb(13, 148, 136);
+            lblTotalBase.Location = new System.Drawing.Point(155, 12);
             lblTotalBase.Text = "0.00 DOP";
 
-            // gridMonedas
-            gridMonedas.Location = new System.Drawing.Point(12, 32);
+            gridMonedas.Location = new System.Drawing.Point(20, 60);
             gridMonedas.Name = "gridMonedas";
             gridMonedas.ReadOnly = true;
             gridMonedas.AllowUserToAddRows = false;
             gridMonedas.AllowUserToDeleteRows = false;
+            gridMonedas.AllowUserToResizeRows = false;
+            gridMonedas.AllowUserToResizeColumns = false;
             gridMonedas.RowHeadersVisible = false;
-            gridMonedas.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill;
-            gridMonedas.Size = new System.Drawing.Size(670, 120);
+            gridMonedas.MultiSelect = false;
             gridMonedas.SelectionMode = DataGridViewSelectionMode.FullRowSelect;
+            gridMonedas.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill;
+            gridMonedas.BackgroundColor = System.Drawing.Color.White;
+            gridMonedas.BorderStyle = BorderStyle.FixedSingle;
+            gridMonedas.DefaultCellStyle.SelectionBackColor = System.Drawing.Color.FromArgb(220, 252, 231);
+            gridMonedas.DefaultCellStyle.SelectionForeColor = System.Drawing.Color.FromArgb(17, 24, 39);
+            gridMonedas.ColumnHeadersDefaultCellStyle.BackColor = System.Drawing.Color.FromArgb(241, 245, 249);
+            gridMonedas.ColumnHeadersDefaultCellStyle.ForeColor = System.Drawing.Color.FromArgb(17, 24, 39);
+            gridMonedas.ColumnHeadersDefaultCellStyle.Font = new System.Drawing.Font("Segoe UI", 9.5F, System.Drawing.FontStyle.Bold);
+            gridMonedas.EnableHeadersVisualStyles = false;
+            gridMonedas.Size = new System.Drawing.Size(940, 150);
 
-            // label2 - Moneda
             label2.AutoSize = true;
-            label2.Location = new System.Drawing.Point(12, 165);
-            label2.Text = "Moneda:";
+            label2.Font = new System.Drawing.Font("Segoe UI", 10F, System.Drawing.FontStyle.Bold);
+            label2.ForeColor = System.Drawing.Color.FromArgb(51, 65, 85);
+            label2.Location = new System.Drawing.Point(20, 230);
+            label2.Text = "Moneda";
 
-            // cbMoneda
             cbMoneda.DropDownStyle = ComboBoxStyle.DropDownList;
-            cbMoneda.Location = new System.Drawing.Point(70, 161);
+            cbMoneda.FlatStyle = FlatStyle.Flat;
+            cbMoneda.Location = new System.Drawing.Point(20, 255);
             cbMoneda.Name = "cbMoneda";
-            cbMoneda.Size = new System.Drawing.Size(120, 23);
+            cbMoneda.Size = new System.Drawing.Size(220, 28);
             cbMoneda.SelectedIndexChanged += cbMoneda_SelectedIndexChanged;
 
-            // label7 - Medio pago
             label7.AutoSize = true;
-            label7.Location = new System.Drawing.Point(210, 165);
-            label7.Text = "Medio pago:";
+            label7.Font = new System.Drawing.Font("Segoe UI", 10F, System.Drawing.FontStyle.Bold);
+            label7.ForeColor = System.Drawing.Color.FromArgb(51, 65, 85);
+            label7.Location = new System.Drawing.Point(260, 230);
+            label7.Text = "Medio de pago";
 
-            // cbMedioPago
             cbMedioPago.DropDownStyle = ComboBoxStyle.DropDownList;
-            cbMedioPago.Location = new System.Drawing.Point(285, 161);
+            cbMedioPago.FlatStyle = FlatStyle.Flat;
+            cbMedioPago.Location = new System.Drawing.Point(260, 255);
             cbMedioPago.Name = "cbMedioPago";
-            cbMedioPago.Size = new System.Drawing.Size(160, 23);
+            cbMedioPago.Size = new System.Drawing.Size(240, 28);
 
-            // label3 - Monto
             label3.AutoSize = true;
-            label3.Location = new System.Drawing.Point(12, 198);
-            label3.Text = "Monto:";
+            label3.Font = new System.Drawing.Font("Segoe UI", 10F, System.Drawing.FontStyle.Bold);
+            label3.ForeColor = System.Drawing.Color.FromArgb(51, 65, 85);
+            label3.Location = new System.Drawing.Point(520, 230);
+            label3.Text = "Monto";
 
-            // txtMontoMoneda
-            txtMontoMoneda.Location = new System.Drawing.Point(70, 194);
+            txtMontoMoneda.Location = new System.Drawing.Point(520, 255);
             txtMontoMoneda.Name = "txtMontoMoneda";
-            txtMontoMoneda.Size = new System.Drawing.Size(160, 23);
+            txtMontoMoneda.Size = new System.Drawing.Size(200, 28);
+            txtMontoMoneda.Font = new System.Drawing.Font("Segoe UI", 14F, System.Drawing.FontStyle.Bold);
+            txtMontoMoneda.TextAlign = HorizontalAlignment.Right;
 
-            // Keypad numérico
-            int baseX = 250;
-            int baseY = 194;
-            int w = 45;
-            int h = 35;
-            int sep = 5;
+            btnRapidoEfectivo.Location = new System.Drawing.Point(740, 245);
+            btnRapidoEfectivo.Size = new System.Drawing.Size(100, 36);
+            btnRapidoEfectivo.Text = "Efectivo";
+            btnRapidoEfectivo.Tag = "efectivo";
+            btnRapidoEfectivo.FlatStyle = FlatStyle.Flat;
+            btnRapidoEfectivo.BackColor = System.Drawing.Color.White;
+            btnRapidoEfectivo.ForeColor = System.Drawing.Color.FromArgb(17, 24, 39);
 
-            // btnNum7
+            btnRapidoTarjeta.Location = new System.Drawing.Point(850, 245);
+            btnRapidoTarjeta.Size = new System.Drawing.Size(100, 36);
+            btnRapidoTarjeta.Text = "Tarjeta";
+            btnRapidoTarjeta.Tag = "tarjeta";
+            btnRapidoTarjeta.FlatStyle = FlatStyle.Flat;
+            btnRapidoTarjeta.BackColor = System.Drawing.Color.White;
+            btnRapidoTarjeta.ForeColor = System.Drawing.Color.FromArgb(17, 24, 39);
+
+            btnRapidoTransferencia.Location = new System.Drawing.Point(740, 287);
+            btnRapidoTransferencia.Size = new System.Drawing.Size(210, 36);
+            btnRapidoTransferencia.Text = "Transferencia";
+            btnRapidoTransferencia.Tag = "transferencia";
+            btnRapidoTransferencia.FlatStyle = FlatStyle.Flat;
+            btnRapidoTransferencia.BackColor = System.Drawing.Color.White;
+            btnRapidoTransferencia.ForeColor = System.Drawing.Color.FromArgb(17, 24, 39);
+
+            int baseX = 20;
+            int baseY = 305;
+            int w = 82;
+            int h = 42;
+            int sep = 8;
+
             btnNum7.Location = new System.Drawing.Point(baseX, baseY);
             btnNum7.Size = new System.Drawing.Size(w, h);
             btnNum7.Text = "7";
             btnNum7.Tag = "7";
-            btnNum7.Click += btnNum_Click;
 
-            // btnNum8
             btnNum8.Location = new System.Drawing.Point(baseX + (w + sep), baseY);
             btnNum8.Size = new System.Drawing.Size(w, h);
             btnNum8.Text = "8";
             btnNum8.Tag = "8";
-            btnNum8.Click += btnNum_Click;
 
-            // btnNum9
             btnNum9.Location = new System.Drawing.Point(baseX + 2 * (w + sep), baseY);
             btnNum9.Size = new System.Drawing.Size(w, h);
             btnNum9.Text = "9";
             btnNum9.Tag = "9";
-            btnNum9.Click += btnNum_Click;
 
-            // fila 2: 4,5,6
             btnNum4.Location = new System.Drawing.Point(baseX, baseY + h + sep);
             btnNum4.Size = new System.Drawing.Size(w, h);
             btnNum4.Text = "4";
             btnNum4.Tag = "4";
-            btnNum4.Click += btnNum_Click;
 
             btnNum5.Location = new System.Drawing.Point(baseX + (w + sep), baseY + h + sep);
             btnNum5.Size = new System.Drawing.Size(w, h);
             btnNum5.Text = "5";
             btnNum5.Tag = "5";
-            btnNum5.Click += btnNum_Click;
 
             btnNum6.Location = new System.Drawing.Point(baseX + 2 * (w + sep), baseY + h + sep);
             btnNum6.Size = new System.Drawing.Size(w, h);
             btnNum6.Text = "6";
             btnNum6.Tag = "6";
-            btnNum6.Click += btnNum_Click;
 
-            // fila 3: 1,2,3
             btnNum1.Location = new System.Drawing.Point(baseX, baseY + 2 * (h + sep));
             btnNum1.Size = new System.Drawing.Size(w, h);
             btnNum1.Text = "1";
             btnNum1.Tag = "1";
-            btnNum1.Click += btnNum_Click;
 
             btnNum2.Location = new System.Drawing.Point(baseX + (w + sep), baseY + 2 * (h + sep));
             btnNum2.Size = new System.Drawing.Size(w, h);
             btnNum2.Text = "2";
             btnNum2.Tag = "2";
-            btnNum2.Click += btnNum_Click;
 
             btnNum3.Location = new System.Drawing.Point(baseX + 2 * (w + sep), baseY + 2 * (h + sep));
             btnNum3.Size = new System.Drawing.Size(w, h);
             btnNum3.Text = "3";
             btnNum3.Tag = "3";
-            btnNum3.Click += btnNum_Click;
 
-            // fila 4: 0 y borrar
             btnNum0.Location = new System.Drawing.Point(baseX, baseY + 3 * (h + sep));
             btnNum0.Size = new System.Drawing.Size(w * 2 + sep, h);
             btnNum0.Text = "0";
             btnNum0.Tag = "0";
-            btnNum0.Click += btnNum_Click;
 
             btnBorrarMonto.Location = new System.Drawing.Point(baseX + 2 * (w + sep), baseY + 3 * (h + sep));
             btnBorrarMonto.Size = new System.Drawing.Size(w, h);
             btnBorrarMonto.Text = "C";
+
+            var keypadButtons = new Button[]
+            {
+        btnNum0, btnNum1, btnNum2, btnNum3, btnNum4, btnNum5,
+        btnNum6, btnNum7, btnNum8, btnNum9, btnBorrarMonto
+            };
+
+            foreach (var btn in keypadButtons)
+            {
+                btn.FlatStyle = FlatStyle.Flat;
+                btn.FlatAppearance.BorderColor = System.Drawing.Color.FromArgb(203, 213, 225);
+                btn.BackColor = System.Drawing.Color.White;
+                btn.ForeColor = System.Drawing.Color.FromArgb(17, 24, 39);
+                btn.Font = new System.Drawing.Font("Segoe UI", 12F, System.Drawing.FontStyle.Bold);
+            }
+
+            btnNum0.Click += btnNum_Click;
+            btnNum1.Click += btnNum_Click;
+            btnNum2.Click += btnNum_Click;
+            btnNum3.Click += btnNum_Click;
+            btnNum4.Click += btnNum_Click;
+            btnNum5.Click += btnNum_Click;
+            btnNum6.Click += btnNum_Click;
+            btnNum7.Click += btnNum_Click;
+            btnNum8.Click += btnNum_Click;
+            btnNum9.Click += btnNum_Click;
             btnBorrarMonto.Click += btnBorrarMonto_Click;
 
-            // btnAgregarLinea
-            btnAgregarLinea.Location = new System.Drawing.Point(450, 192);
-            btnAgregarLinea.Size = new System.Drawing.Size(100, 30);
+            btnAgregarLinea.Location = new System.Drawing.Point(520, 305);
+            btnAgregarLinea.Size = new System.Drawing.Size(170, 42);
             btnAgregarLinea.Text = "Agregar pago";
+            btnAgregarLinea.FlatStyle = FlatStyle.Flat;
+            btnAgregarLinea.FlatAppearance.BorderSize = 0;
+            btnAgregarLinea.BackColor = System.Drawing.Color.FromArgb(13, 177, 146);
+            btnAgregarLinea.ForeColor = System.Drawing.Color.White;
+            btnAgregarLinea.Font = new System.Drawing.Font("Segoe UI", 11F, System.Drawing.FontStyle.Bold);
             btnAgregarLinea.Click += btnAgregarLinea_Click;
 
-            // btnQuitarLinea
-            btnQuitarLinea.Location = new System.Drawing.Point(560, 192);
-            btnQuitarLinea.Size = new System.Drawing.Size(100, 30);
+            btnQuitarLinea.Location = new System.Drawing.Point(520, 365);
+            btnQuitarLinea.Size = new System.Drawing.Size(170, 42);
+            btnQuitarLinea.FlatStyle = FlatStyle.Flat;
+            btnQuitarLinea.FlatAppearance.BorderColor = System.Drawing.Color.FromArgb(226, 232, 240);
+            btnQuitarLinea.BackColor = System.Drawing.Color.White;
+            btnQuitarLinea.ForeColor = System.Drawing.Color.FromArgb(17, 24, 39);
+            btnQuitarLinea.Font = new System.Drawing.Font("Segoe UI", 11F, System.Drawing.FontStyle.Bold);
             btnQuitarLinea.Text = "Quitar pago";
             btnQuitarLinea.Click += btnQuitarLinea_Click;
 
-            // gridPagos
-            gridPagos.Location = new System.Drawing.Point(12, 250);
+            btnCompletarPendiente.Location = new System.Drawing.Point(520, 405);
+            btnCompletarPendiente.Size = new System.Drawing.Size(170, 42);
+            btnCompletarPendiente.Text = "Pagar exacto";
+            btnCompletarPendiente.FlatStyle = FlatStyle.Flat;
+            btnCompletarPendiente.FlatAppearance.BorderSize = 0;
+            btnCompletarPendiente.BackColor = System.Drawing.Color.FromArgb(59, 130, 246);
+            btnCompletarPendiente.ForeColor = System.Drawing.Color.White;
+            btnCompletarPendiente.Font = new System.Drawing.Font("Segoe UI", 11F, System.Drawing.FontStyle.Bold);
+            btnCompletarPendiente.Click += btnCompletarPendiente_Click;
+
+            gridPagos.Location = new System.Drawing.Point(20, 520);
             gridPagos.Name = "gridPagos";
             gridPagos.ReadOnly = true;
             gridPagos.AllowUserToAddRows = false;
             gridPagos.AllowUserToDeleteRows = false;
+            gridPagos.AllowUserToResizeRows = false;
             gridPagos.RowHeadersVisible = false;
             gridPagos.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill;
             gridPagos.SelectionMode = DataGridViewSelectionMode.FullRowSelect;
-            gridPagos.Size = new System.Drawing.Size(670, 180);
+            gridPagos.MultiSelect = false;
+            gridPagos.BackgroundColor = System.Drawing.Color.White;
+            gridPagos.BorderStyle = BorderStyle.FixedSingle;
+            gridPagos.DefaultCellStyle.SelectionBackColor = System.Drawing.Color.FromArgb(219, 234, 254);
+            gridPagos.DefaultCellStyle.SelectionForeColor = System.Drawing.Color.FromArgb(17, 24, 39);
+            gridPagos.ColumnHeadersDefaultCellStyle.BackColor = System.Drawing.Color.FromArgb(241, 245, 249);
+            gridPagos.ColumnHeadersDefaultCellStyle.ForeColor = System.Drawing.Color.FromArgb(17, 24, 39);
+            gridPagos.ColumnHeadersDefaultCellStyle.Font = new System.Drawing.Font("Segoe UI", 9.5F, System.Drawing.FontStyle.Bold);
+            gridPagos.EnableHeadersVisualStyles = false;
+            gridPagos.Size = new System.Drawing.Size(940, 130);
 
-            // label4 - Pagado
             label4.AutoSize = true;
-            label4.Location = new System.Drawing.Point(12, 440);
+            label4.Font = new System.Drawing.Font("Segoe UI", 10.5F, System.Drawing.FontStyle.Bold);
+            label4.ForeColor = System.Drawing.Color.FromArgb(51, 65, 85);
+            label4.Location = new System.Drawing.Point(20, 650);
             label4.Text = "Pagado (DOP):";
 
             lblPagadoBase.AutoSize = true;
-            lblPagadoBase.Font = new System.Drawing.Font("Segoe UI", 9F, System.Drawing.FontStyle.Bold);
-            lblPagadoBase.Location = new System.Drawing.Point(110, 440);
+            lblPagadoBase.Font = new System.Drawing.Font("Segoe UI", 13F, System.Drawing.FontStyle.Bold);
+            lblPagadoBase.ForeColor = System.Drawing.Color.FromArgb(13, 148, 136);
+            lblPagadoBase.Location = new System.Drawing.Point(135, 647);
             lblPagadoBase.Text = "0.00";
 
-            // label5 - Pendiente
             label5.AutoSize = true;
-            label5.Location = new System.Drawing.Point(220, 440);
+            label5.Font = new System.Drawing.Font("Segoe UI", 10.5F, System.Drawing.FontStyle.Bold);
+            label5.ForeColor = System.Drawing.Color.FromArgb(51, 65, 85);
+            label5.Location = new System.Drawing.Point(280, 650);
             label5.Text = "Pendiente (DOP):";
 
             lblPendienteBase.AutoSize = true;
-            lblPendienteBase.Font = new System.Drawing.Font("Segoe UI", 9F, System.Drawing.FontStyle.Bold);
-            lblPendienteBase.Location = new System.Drawing.Point(320, 440);
+            lblPendienteBase.Font = new System.Drawing.Font("Segoe UI", 13F, System.Drawing.FontStyle.Bold);
+            lblPendienteBase.ForeColor = System.Drawing.Color.FromArgb(220, 38, 38);
+            lblPendienteBase.Location = new System.Drawing.Point(425, 647);
             lblPendienteBase.Text = "0.00";
 
-            // btnAceptar
-            btnAceptar.Location = new System.Drawing.Point(490, 435);
-            btnAceptar.Size = new System.Drawing.Size(90, 30);
-            btnAceptar.Text = "Aceptar";
+            label6.AutoSize = true;
+            label6.Font = new System.Drawing.Font("Segoe UI", 10.5F, System.Drawing.FontStyle.Bold);
+            label6.ForeColor = System.Drawing.Color.FromArgb(51, 65, 85);
+            label6.Location = new System.Drawing.Point(20, 683);
+            label6.Text = "Cambio (DOP):";
+
+            lblCambioBase.AutoSize = true;
+            lblCambioBase.Font = new System.Drawing.Font("Segoe UI", 13F, System.Drawing.FontStyle.Bold);
+            lblCambioBase.ForeColor = System.Drawing.Color.FromArgb(37, 99, 235);
+            lblCambioBase.Location = new System.Drawing.Point(135, 680);
+            lblCambioBase.Text = "0.00";
+
+            btnAceptar.Location = new System.Drawing.Point(740, 665);
+            btnAceptar.Size = new System.Drawing.Size(110, 42);
+            btnAceptar.Text = "Finalizar";
+            btnAceptar.FlatStyle = FlatStyle.Flat;
+            btnAceptar.FlatAppearance.BorderSize = 0;
+            btnAceptar.BackColor = System.Drawing.Color.FromArgb(13, 177, 146);
+            btnAceptar.ForeColor = System.Drawing.Color.White;
+            btnAceptar.Font = new System.Drawing.Font("Segoe UI", 10.5F, System.Drawing.FontStyle.Bold);
             btnAceptar.Click += btnAceptar_Click;
 
-            // btnCancelar
-            btnCancelar.Location = new System.Drawing.Point(592, 435);
-            btnCancelar.Size = new System.Drawing.Size(90, 30);
+            btnCancelar.Location = new System.Drawing.Point(850, 665);
+            btnCancelar.Size = new System.Drawing.Size(110, 42);
             btnCancelar.Text = "Cancelar";
+            btnCancelar.FlatStyle = FlatStyle.Flat;
+            btnCancelar.FlatAppearance.BorderColor = System.Drawing.Color.FromArgb(203, 213, 225);
+            btnCancelar.BackColor = System.Drawing.Color.White;
+            btnCancelar.ForeColor = System.Drawing.Color.FromArgb(17, 24, 39);
+            btnCancelar.Font = new System.Drawing.Font("Segoe UI", 10.5F, System.Drawing.FontStyle.Bold);
             btnCancelar.Click += btnCancelar_Click;
 
-            // Add controls
             Controls.Add(label1);
             Controls.Add(lblTotalBase);
             Controls.Add(gridMonedas);
@@ -305,6 +421,10 @@ namespace Presentation
             Controls.Add(cbMedioPago);
             Controls.Add(label3);
             Controls.Add(txtMontoMoneda);
+
+            Controls.Add(btnRapidoEfectivo);
+            Controls.Add(btnRapidoTarjeta);
+            Controls.Add(btnRapidoTransferencia);
 
             Controls.Add(btnNum7);
             Controls.Add(btnNum8);
@@ -320,12 +440,16 @@ namespace Presentation
 
             Controls.Add(btnAgregarLinea);
             Controls.Add(btnQuitarLinea);
+            Controls.Add(btnCompletarPendiente);
+
             Controls.Add(gridPagos);
 
             Controls.Add(label4);
             Controls.Add(lblPagadoBase);
             Controls.Add(label5);
             Controls.Add(lblPendienteBase);
+            Controls.Add(label6);
+            Controls.Add(lblCambioBase);
             Controls.Add(btnAceptar);
             Controls.Add(btnCancelar);
 

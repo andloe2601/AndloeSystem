@@ -7,16 +7,12 @@ namespace Andloe.Entidad
 {
     public class PagoLineaResult
     {
-        public int MedioPagoId { get; set; }
-        public string NombreMedio { get; set; } = string.Empty;
-
-        public string MonedaCodigo { get; set; } = "DOP";
-        public decimal TasaCambio { get; set; } = 1m;
-
-        /// <summary>Monto en la moneda seleccionada (USD, EUR, DOP, etc.).</summary>
+        public string FormaPagoCodigo { get; set; } = "";
+        public string NombreMedio { get; set; } = "";
+        public string MonedaCodigo { get; set; } = "";
+        public decimal TasaCambio { get; set; }
         public decimal MontoMoneda { get; set; }
 
-        /// <summary>Monto convertido a moneda base (DOP) = MontoMoneda * TasaCambio.</summary>
         public decimal MontoBase => Math.Round(MontoMoneda * TasaCambio, 2);
     }
 
@@ -45,7 +41,8 @@ namespace Entidad
         public string? MonedaCodigo { get; set; }
         public decimal TasaCambio { get; set; }
         public decimal Monto { get; set; }
-        public int MedioPagoId { get; set; }
+        public decimal MontoBase { get; set; }
+        public string FormaPagoCodigo { get; set; } = "";
         public string? Referencia { get; set; }
         public string? Entidad { get; set; }
         public string? Observacion { get; set; }
@@ -53,7 +50,6 @@ namespace Entidad
         public int? CajaId { get; set; }
         public int VentaId { get; set; }
         public string Estado { get; set; } = "APLICADO";
-
         public string? POS_CajaNumero { get; set; }
     }
 }

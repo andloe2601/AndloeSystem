@@ -381,24 +381,26 @@ namespace Presentation
                     ? ConfigService.ClienteDefecto
                     : txtClienteCodigo.Text.Trim();
 
-                // Tomamos el primer medio de pago
                 var primerPago = _pagoSeleccionado.Pagos[0];
-                var medioPagoId = primerPago.MedioPagoId;
+                var formaPagoFiscal = primerPago.FormaPagoCodigo;
                 var montoRecibidoBase = _pagoSeleccionado.PagadoBase;
 
-                // Cerrar venta (esto ahora también registra promos en BD desde PosService)
-                var ventaId = _pos.CerrarVenta(
-    usuario: _usuarioPos,
-    clienteCodigo: clienteCodigo,
-    medioPagoId: medioPagoId,
-    montoRecibido: montoRecibidoBase,
-    cajaId: _cajaId,
-    moneda: ConfigService.MonedaDefecto,
-    terminoPagoId: 1,
-    posCajaNumero: _cajaNumero
- );
+                var tipoECFId = 2;       // Consumidor final por defecto
+                var tipoPagoECFId = 1;   // Contado
 
-                // Guardar también los pagos amarrados a la caja
+                var ventaId = _pos.CerrarVenta(
+                    usuario: _usuarioPos,
+                    clienteCodigo: clienteCodigo,
+                    medioPagoId: 0,
+                    montoRecibido: montoRecibidoBase,
+                    moneda: ConfigService.MonedaDefecto,
+                    terminoPagoId: 1,
+                    posCajaNumero: _cajaNumero,
+                    cajaId: _cajaId,
+                    tipoECFId: tipoECFId,
+                    tipoPagoECFId: tipoPagoECFId,
+                    formaPagoFiscal: formaPagoFiscal);
+
                 _pos.GuardarPagosPOS(
                     ventaId,
                     _pagoSeleccionado.Pagos,
@@ -406,25 +408,21 @@ namespace Presentation
                     _cajaId,
                     _cajaNumero);
 
-                // ====================== PREPARAR TICKET ======================
                 _ticketVentaId = ventaId;
                 _ticketUsuario = _usuarioPos;
                 _ticketCaja = _cajaNumero;
                 _ticketClienteCodigo = clienteCodigo;
                 _ticketClienteNombre = lblNombreCliente.Text ?? "";
 
-                // Totales actuales del POS
                 var totales = _pos.Totales();
                 _ticketSubtotal = totales.Subtotal;
                 _ticketItbis = totales.Itbis;
                 _ticketTotal = totales.Total;
 
-                // Pagado y cambio
                 _ticketPagado = _pagoSeleccionado.PagadoBase;
                 _ticketCambio = _ticketPagado - _ticketTotal;
                 if (_ticketCambio < 0) _ticketCambio = 0;
 
-                // Copia de las líneas del carrito (antes de limpiar)
                 _ticketLineas = _pos.Carrito
                     .Select(x => new
                     {
@@ -437,7 +435,6 @@ namespace Presentation
                     .Cast<dynamic>()
                     .ToList();
 
-                // Imprimir ticket 80mm
                 ImprimirTicket80mm();
 
                 _ventaIdActual = ventaId;

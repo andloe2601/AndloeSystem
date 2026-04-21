@@ -1,9 +1,10 @@
-﻿using System;
+﻿using Andloe.Logica;
+using Presentacion;
+using Presentation;
+using System;
 using System.Drawing;
 using System.Linq;
 using System.Windows.Forms;
-using Andloe.Logica;
-using Presentation;
 
 namespace Andloe.Presentacion
 {
@@ -212,7 +213,36 @@ namespace Andloe.Presentacion
         private void btnPOS_Click(object sender, EventArgs e)
         {
             ActivateButton(btnPOS);
-            MessageBox.Show("POS listo.");
+
+            using (var frmLogin = new FormLoginPosClave())
+            {
+                var drLogin = frmLogin.ShowDialog(this);
+                if (drLogin != DialogResult.OK)
+                    return;
+
+                var cajaId = frmLogin.CajaIdSeleccionada;
+                var cajaNumero = frmLogin.CajaNumeroSeleccionada;
+                var usuario = frmLogin.UsuarioLogueado;
+
+                if (cajaId <= 0 || string.IsNullOrWhiteSpace(cajaNumero))
+                {
+                    MessageBox.Show(
+                        "No se obtuvo información válida de caja desde el login.",
+                        "POS",
+                        MessageBoxButtons.OK,
+                        MessageBoxIcon.Error);
+                    return;
+                }
+
+                bool puedeCerrarCaja =
+                    usuario.Equals("ADMIN", StringComparison.OrdinalIgnoreCase) ||
+                    usuario.Equals("SUPERVISOR", StringComparison.OrdinalIgnoreCase);
+
+                using (var frmPos = new FormPosVenta(usuario, cajaId, cajaNumero, puedeCerrarCaja))
+                {
+                    frmPos.ShowDialog(this);
+                }
+            }
         }
 
         private void btnClientes_Click(object sender, EventArgs e)

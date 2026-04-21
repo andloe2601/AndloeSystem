@@ -3,6 +3,7 @@ using Andloe.Logica;
 using Andloe.Presentacion;
 using Guna.UI2.WinForms;
 using Microsoft.Data.SqlClient;
+using Presentation;
 using System;
 using System.Data;
 using System.Drawing;
@@ -184,10 +185,17 @@ namespace Presentacion
 
                 Hide();
 
-                using (var main = new FormPrincipal(displayUser, roles))
+                if (EsAccesoPosDirecto(roles))
                 {
-                    main.StartPosition = FormStartPosition.CenterScreen;
-                    main.ShowDialog(this);
+                    AbrirPosDesdeLogin();
+                }
+                else
+                {
+                    using (var main = new FormPrincipal(displayUser, roles))
+                    {
+                        main.StartPosition = FormStartPosition.CenterScreen;
+                        main.ShowDialog(this);
+                    }
                 }
 
                 SesionService.Cerrar();
@@ -202,6 +210,44 @@ namespace Presentacion
             {
                 MostrarMensaje("Error al iniciar sesión: " + ex.Message);
             }
+        }
+
+
+        private bool EsAccesoPosDirecto(string[] roles)
+        {
+            if (roles == null || roles.Length == 0) return false;
+
+            return roles.Any(r =>
+                !string.IsNullOrWhiteSpace(r) &&
+                (r.Contains("POS", StringComparison.OrdinalIgnoreCase) ||
+                 r.Contains("CAJA", StringComparison.OrdinalIgnoreCase) ||
+                 r.Contains("CAJERO", StringComparison.OrdinalIgnoreCase)));
+        }
+
+        private void AbrirPosDesdeLogin()
+        {
+            using var frmLoginPos = new FormLoginPosClave();
+            var dr = frmLoginPos.ShowDialog(this);
+            if (dr != DialogResult.OK)
+                return;
+
+            var cajaId = frmLoginPos.CajaIdSeleccionada;
+            var cajaNumero = frmLoginPos.CajaNumeroSeleccionada;
+            var usuarioPos = frmLoginPos.UsuarioLogueado;
+
+            if (cajaId <= 0 || string.IsNullOrWhiteSpace(cajaNumero))
+            {
+                MostrarMensaje("No se obtuvo una caja válida para abrir el POS.");
+                return;
+            }
+
+            bool puedeCerrarCaja =
+                usuarioPos.Equals("ADMIN", StringComparison.OrdinalIgnoreCase) ||
+                usuarioPos.Equals("SUPERVISOR", StringComparison.OrdinalIgnoreCase);
+
+            using var frmPos = new FormPosVenta(usuarioPos, cajaId, cajaNumero, puedeCerrarCaja);
+            frmPos.StartPosition = FormStartPosition.CenterScreen;
+            frmPos.ShowDialog(this);
         }
 
         private void MostrarMensaje(string mensaje)
