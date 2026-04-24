@@ -5,7 +5,7 @@ using System.Windows.Forms;
 using Guna.UI2.WinForms;
 using Guna.UI2.WinForms.Suite;
 
-namespace Presentation
+namespace Andloe.Presentacion
 {
     partial class FormLoginPosClave
     {

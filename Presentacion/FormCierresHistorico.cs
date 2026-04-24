@@ -2,8 +2,9 @@
 using System.Windows.Forms;
 using Andloe.Logica;
 using Andloe.Entidad;
+using Andloe.Presentation;
 
-namespace Presentation
+namespace Andloe.Presentation
 {
     public partial class FormCierresHistorico : Form
     {
@@ -72,7 +73,7 @@ namespace Presentation
                 }
 
                 // Abrimos el detalle
-                using (var frm = new FormCierreDetalle(cierreId))
+                using (var frm = new Andloe.Presentacion.FormCierreDetalle(cierreId))
                 {
                     frm.ShowDialog(this);
                 }

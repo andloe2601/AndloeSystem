@@ -2,7 +2,7 @@
 using System.Drawing;
 using System.Windows.Forms;
 using Andloe.Logica;
-using Presentation;
+using Andloe.Presentation;
 
 namespace Andloe.Presentacion
 {

@@ -4,7 +4,7 @@ using System.Windows.Forms;
 using Microsoft.Data.SqlClient;
 using Andloe.Data;
 
-namespace Presentation
+namespace Andloe.Presentacion
 {
     public partial class FormKardex : Form
     {

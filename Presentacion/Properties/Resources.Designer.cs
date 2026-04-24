@@ -8,7 +8,7 @@
 // </auto-generated>
 //------------------------------------------------------------------------------
 
-namespace Presentacion.Properties {
+namespace Andloe.Presentacion.Properties {
     using System;
     
     

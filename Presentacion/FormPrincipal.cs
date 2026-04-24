@@ -1,10 +1,10 @@
 ﻿using Andloe.Logica;
-using Presentacion;
-using Presentation;
+using Andloe.Presentation;
 using System;
 using System.Drawing;
 using System.Linq;
 using System.Windows.Forms;
+using Andloe.Presentacion;
 
 namespace Andloe.Presentacion
 {

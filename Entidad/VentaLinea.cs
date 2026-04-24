@@ -15,5 +15,6 @@
 
         public decimal DescuentoPct { get; set; }      // % aplicado
         public decimal DescuentoMonto { get; set; }    // monto rebajado
+        public bool PrecioIncluyeITBIS { get; set; }
     }
 }

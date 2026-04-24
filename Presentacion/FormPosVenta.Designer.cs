@@ -1,4 +1,4 @@
-﻿namespace Presentacion
+﻿namespace Andloe.Presentation
 {
     partial class FormPosVenta
     {

@@ -5,8 +5,10 @@ using Andloe.Logica;
 using Andloe.Entidad;
 using System.Drawing;
 using System.Drawing.Printing;
+using Andloe.Presentation;
 
-namespace Presentation
+
+namespace Andloe.Presentation
 {
     public partial class FormPOS : Form
     {

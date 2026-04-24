@@ -3,14 +3,14 @@ using Andloe.Logica;
 using Andloe.Presentacion;
 using Guna.UI2.WinForms;
 using Microsoft.Data.SqlClient;
-using Presentation;
+using Andloe.Presentation;
 using System;
 using System.Data;
 using System.Drawing;
 using System.Linq;
 using System.Windows.Forms;
 
-namespace Presentacion
+namespace Andloe.Presentacion
 {
     public partial class FormLogin : Form
     {

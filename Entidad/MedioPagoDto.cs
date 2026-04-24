@@ -11,5 +11,14 @@ namespace Andloe.Entidad
         public int MedioPagoId { get; set; }
         public string Nombre { get; set; } = "";
     }
+
+    public class PosFormaPagoUiDto
+    {
+        public string Clave { get; set; } = "";
+        public string FormaPagoCodigo { get; set; } = "";
+        public string Nombre { get; set; } = "";
+    }
+
+
 }
 

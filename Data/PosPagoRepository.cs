@@ -47,7 +47,7 @@ VALUES
     @VentaId,
     @Estado,
     @POS_CajaNumero,
-    0,
+    NULL,
     0
 );", tx.Connection, tx);
 
@@ -77,7 +77,8 @@ VALUES
             cmd.Parameters.Add("@Usuario", SqlDbType.VarChar, 50).Value = pago.Usuario ?? "";
             cmd.Parameters.Add("@CajaId", SqlDbType.Int).Value = pago.CajaId;
             cmd.Parameters.Add("@VentaId", SqlDbType.BigInt).Value = pago.VentaId;
-            cmd.Parameters.Add("@Estado", SqlDbType.VarChar, 12).Value = string.IsNullOrWhiteSpace(pago.Estado) ? "APLICADO" : pago.Estado;
+            cmd.Parameters.Add("@Estado", SqlDbType.VarChar, 12).Value =
+                string.IsNullOrWhiteSpace(pago.Estado) ? "APLICADO" : pago.Estado;
 
             if (string.IsNullOrWhiteSpace(pago.POS_CajaNumero))
                 cmd.Parameters.Add("@POS_CajaNumero", SqlDbType.NVarChar, 20).Value = DBNull.Value;

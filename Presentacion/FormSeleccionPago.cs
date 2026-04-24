@@ -8,7 +8,7 @@ using Andloe.Entidad;
 using System.Drawing;
 using System.Drawing.Drawing2D;
 
-namespace Presentation
+namespace Andloe.Presentation
 {
     public partial class FormSeleccionPago : Form
     {
@@ -295,7 +295,6 @@ ORDER BY TRY_CONVERT(INT, FormaPagoCodigo);");
             cbMedioPago.ValueMember = "FormaPagoCodigo";
             cbMedioPago.DataSource = dt;
 
-            // Por defecto: Efectivo = 1
             for (int i = 0; i < cbMedioPago.Items.Count; i++)
             {
                 var drv = cbMedioPago.Items[i] as DataRowView;

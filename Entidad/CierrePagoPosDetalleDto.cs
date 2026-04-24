@@ -12,7 +12,8 @@
         public string? MonedaCodigo { get; set; }
         public decimal TasaCambio { get; set; }
 
-        public int MedioPagoId { get; set; }
+        public string? FormaPagoCodigo { get; set; }
+        public decimal MontoBase { get; set; }
         public string? MedioPagoNombre { get; set; }
 
         public decimal Monto { get; set; }

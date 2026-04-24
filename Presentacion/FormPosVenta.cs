@@ -2,7 +2,6 @@
 using Andloe.Entidad;
 using Andloe.Logica;
 using Andloe.Presentacion;
-using Presentation;
 using System;
 using System.Collections.Generic;
 using System.Data;
@@ -10,7 +9,7 @@ using System.Drawing;
 using System.Linq;
 using System.Windows.Forms;
 
-namespace Presentacion
+namespace Andloe.Presentation
 {
     public partial class FormPosVenta : Form
     {
@@ -40,7 +39,7 @@ namespace Presentacion
 
         private readonly List<Producto> _productosCache = new();
         private readonly Dictionary<int, string> _categorias = new();
-        private readonly Dictionary<string, MedioPagoDto> _mediosPagoPorClave = new(StringComparer.OrdinalIgnoreCase);
+        private readonly Dictionary<string, PosFormaPagoUiDto> _mediosPagoPorClave = new(StringComparer.OrdinalIgnoreCase);
         private readonly System.Windows.Forms.Timer _searchTimer = new();
 
         private string _filtroTexto = string.Empty;
@@ -536,6 +535,18 @@ namespace Presentacion
                 _searchTimer.Start();
             };
 
+            txtBuscar.KeyDown += (_, e) =>
+            {
+                if (e.KeyCode != Keys.Enter) return;
+
+                e.SuppressKeyPress = true;
+
+                var valor = (txtBuscar.Text ?? "").Trim();
+                if (string.IsNullOrWhiteSpace(valor)) return;
+
+                AgregarProductoPorCodigoOBarras(valor);
+            };
+
             _searchTimer.Tick += (_, __) =>
             {
                 _searchTimer.Stop();
@@ -575,7 +586,37 @@ namespace Presentacion
 
         private int? ObtenerSucursalActual()
         {
-            return null;
+            return 1;
+        }
+
+        private void AgregarProductoPorCodigoOBarras(string valor)
+        {
+            try
+            {
+                var prod = _productoRepo.ObtenerPorCodigoOBarras(valor);
+
+                if (prod == null || string.IsNullOrWhiteSpace(prod.Codigo))
+                {
+                    MessageBox.Show(
+                        $"No se encontró producto con código/barra: {valor}",
+                        "POS",
+                        MessageBoxButtons.OK,
+                        MessageBoxIcon.Warning);
+                    return;
+                }
+
+                AgregarProducto(prod.Codigo);
+
+                txtBuscar.Clear();
+                _filtroTexto = string.Empty;
+                RenderProductos();
+                txtBuscar.Focus();
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Error buscando producto por código/barra.\n{ex.Message}", "POS",
+                    MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
         }
 
         private string ConstruirResumenFiscal(int facturaId)
@@ -615,36 +656,75 @@ namespace Presentacion
             btnMenuConfig.Text = _sidebarExpandido ? (btnMenuConfig.Tag?.ToString() ?? btnMenuConfig.Text) : "⚙";
         }
 
+
+
         private void CargarTiposComprobanteFiscal()
         {
-            var sucursalId = ObtenerSucursalActual(); // según tu sesión/config actual
+            var sucursalId = ObtenerSucursalActual();
             _tiposComprobante = _tipoCompRepo.ListarActivos(_cajaId, sucursalId);
 
             cbTipoComprobanteFiscal.DataSource = null;
+
+            if (_tiposComprobante == null || _tiposComprobante.Count == 0)
+                throw new InvalidOperationException(
+                    "No hay tipos de comprobante POS configurados. Debe alimentar la tabla POS_TipoComprobanteConfig.");
+
             cbTipoComprobanteFiscal.DisplayMember = "NombreMostrar";
             cbTipoComprobanteFiscal.ValueMember = "PosTipoComprobanteConfigId";
             cbTipoComprobanteFiscal.DataSource = _tiposComprobante;
 
-            var def = _tiposComprobante.FirstOrDefault(x => x.EsDefault)
-                      ?? _tiposComprobante.FirstOrDefault();
-
-            if (def != null)
-            {
-                cbTipoComprobanteFiscal.SelectedValue = def.PosTipoComprobanteConfigId;
-                _tipoComprobanteActual = def;
-            }
+            AplicarReglaTipoComprobanteSegunCliente();
         }
 
-        private string ResolverFormaPagoFiscal(string clave)
+        private void AplicarReglaTipoComprobanteSegunCliente()
         {
-            return clave.ToLowerInvariant() switch
+            if (_tiposComprobante == null || _tiposComprobante.Count == 0)
+                throw new InvalidOperationException("No hay comprobantes fiscales configurados en POS.");
+
+            var tieneDocumento = !string.IsNullOrWhiteSpace(_clienteActual?.RncCedula);
+            PosTipoComprobanteConfigDto? elegido;
+
+            if (!tieneDocumento)
             {
-                "efectivo" => "1",
-                "transfer" => "2",
-                "tarjeta" => "3",
-                _ => "8"
-            };
+                // Consumidor final => debe ir con comprobante de consumo
+                elegido = _tiposComprobante.FirstOrDefault(x =>
+                    x.Activo &&
+                    x.PermiteEnPOS &&
+                    x.TipoECFId == 2); // E32 / consumo
+
+                if (elegido == null)
+                    throw new InvalidOperationException(
+                        "No existe configuración activa en POS_TipoComprobanteConfig para consumo final (TipoECFId=2).");
+
+                cbTipoComprobanteFiscal.Enabled = false;
+            }
+            else
+            {
+                // Cliente con RNC/Cédula => por defecto crédito fiscal, pero puede quedar habilitado
+                elegido = _tiposComprobante.FirstOrDefault(x =>
+                    x.Activo &&
+                    x.PermiteEnPOS &&
+                    x.TipoECFId == 1); // E31 / crédito fiscal
+
+                if (elegido == null)
+                {
+                    elegido = _tiposComprobante.FirstOrDefault(x =>
+                        x.Activo &&
+                        x.PermiteEnPOS &&
+                        x.EsDefault);
+                }
+
+                if (elegido == null)
+                    throw new InvalidOperationException(
+                        "No existe configuración activa en POS_TipoComprobanteConfig para cliente con documento fiscal.");
+
+                cbTipoComprobanteFiscal.Enabled = true;
+            }
+
+            cbTipoComprobanteFiscal.SelectedValue = elegido.PosTipoComprobanteConfigId;
+            _tipoComprobanteActual = elegido;
         }
+
 
         private void ValidarAntesDeCobrar()
         {
@@ -709,8 +789,7 @@ namespace Presentacion
 
         private void CargarClientePorDefecto()
         {
-            var cod = ConfigService.ClienteDefecto;
-            _clienteActual = string.IsNullOrWhiteSpace(cod) ? null : _clienteRepo.BuscarPorCodigoORnc(cod);
+            _clienteActual = null;
             RefrescarClienteVisual();
         }
 
@@ -745,9 +824,9 @@ ORDER BY TRY_CONVERT(INT, FormaPagoCodigo);");
                 if (string.IsNullOrWhiteSpace(codigo))
                     continue;
 
-                var dto = new MedioPagoDto
+                var dto = new PosFormaPagoUiDto
                 {
-                    MedioPagoId = 0, // ya no se usa para POS fiscal
+                    FormaPagoCodigo = codigo,
                     Nombre = descripcion
                 };
 
@@ -1070,7 +1149,7 @@ ORDER BY TRY_CONVERT(INT, FormaPagoCodigo);");
 
         private void ReaplicarPromos()
         {
-            var clienteCodigo = _clienteActual?.Codigo ?? ConfigService.ClienteDefecto;
+            var clienteCodigo = _clienteActual?.Codigo;
             _pos.RecalcularPromosCarrito(clienteCodigo);
         }
 
@@ -1107,6 +1186,9 @@ ORDER BY TRY_CONVERT(INT, FormaPagoCodigo);");
             lblClienteSecundario.Text = string.IsNullOrWhiteSpace(codigo)
                 ? "Consumidor final"
                 : $"{codigo} · {rnc}";
+
+            if (cbTipoComprobanteFiscal != null && _tiposComprobante != null && _tiposComprobante.Count > 0)
+                AplicarReglaTipoComprobanteSegunCliente();
         }
 
         private void AplicarDescuentoALineaSeleccionada()
@@ -1124,7 +1206,7 @@ ORDER BY TRY_CONVERT(INT, FormaPagoCodigo);");
                 return;
             }
 
-            var maxPermitido = _pos.CalcularMaxDescuentoPct(_clienteActual?.Codigo ?? ConfigService.ClienteDefecto, item.ProductoCodigo);
+            var maxPermitido = _pos.CalcularMaxDescuentoPct(_clienteActual?.Codigo, item.ProductoCodigo);
             if (maxPermitido <= 0)
             {
                 MessageBox.Show("Esta línea no permite descuento.", "POS", MessageBoxButtons.OK, MessageBoxIcon.Information);
@@ -1224,28 +1306,15 @@ ORDER BY TRY_CONVERT(INT, FormaPagoCodigo);");
                 return;
             }
 
-            string formaPagoCodigo = clave.ToLowerInvariant() switch
+            if (!_mediosPagoPorClave.TryGetValue(clave, out var medio))
             {
-                "efectivo" => "1",
-                "transfer" => "2",
-                "transferencia" => "2",
-                "cheque" => "2",
-                "tarjeta" => "3",
-                "credito" => "4",
-                _ => "8"
-            };
-
-            string nombreMedio = formaPagoCodigo switch
-            {
-                "1" => "Efectivo",
-                "2" => "Cheque / Transferencia / Depósito",
-                "3" => "Tarjeta Débito / Crédito",
-                "4" => "Venta a Crédito",
-                "5" => "Bonos o Certificados",
-                "6" => "Permuta",
-                "7" => "Nota de Crédito",
-                _ => "Otras Formas de Venta"
-            };
+                MessageBox.Show(
+                    $"No existe configuración de forma de pago para '{clave}'.",
+                    "POS",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Warning);
+                return;
+            }
 
             decimal montoMoneda = total;
             if (clave.Equals("efectivo", StringComparison.OrdinalIgnoreCase))
@@ -1258,8 +1327,8 @@ ORDER BY TRY_CONVERT(INT, FormaPagoCodigo);");
             var result = new SeleccionPagoResult { TotalBase = total };
             result.Pagos.Add(new PagoLineaResult
             {
-                FormaPagoCodigo = formaPagoCodigo,
-                NombreMedio = nombreMedio,
+                FormaPagoCodigo = medio.FormaPagoCodigo,
+                NombreMedio = medio.Nombre,
                 MonedaCodigo = ConfigService.MonedaDefecto,
                 TasaCambio = 1m,
                 MontoMoneda = montoMoneda
@@ -1308,27 +1377,41 @@ ORDER BY TRY_CONVERT(INT, FormaPagoCodigo);");
                 if (result.DiferenciaBase > 0.01m)
                     throw new InvalidOperationException($"Falta por cobrar RD$ {result.DiferenciaBase:N2}.");
 
-
-
-                var clienteCodigo = _clienteActual?.Codigo ?? ConfigService.ClienteDefecto;
-                var totalesAntes = _pos.Totales();
-
                 if (_tipoComprobanteActual == null)
                     throw new InvalidOperationException("No hay un tipo de comprobante fiscal seleccionado.");
 
-                var primerPago = result.Pagos[0];
-                var tipoECFId = _tipoComprobanteActual.TipoECFId;
-                var tipoPagoECFId = ResolverTipoPagoECFId();
-                var formaPagoFiscal = primerPago.FormaPagoCodigo;
+                ValidarAntesDeCobrar();
 
+                var primerPago = result.Pagos[0];
+                var totalesAntes = _pos.Totales();
+                                string? clienteCodigo = _clienteActual?.Codigo;
+                if (string.IsNullOrWhiteSpace(clienteCodigo))
+                    throw new InvalidOperationException(
+                        "No hay cliente seleccionado válido para registrar la venta fiscal. Debe cargarlo desde tabla/configuración correcta.");
+
+                var tipoECFId = _tipoComprobanteActual.TipoECFId;
                 if (tipoECFId <= 0)
                     throw new InvalidOperationException("El tipo de comprobante fiscal seleccionado no es válido.");
 
+                var tieneDocumentoCliente = !string.IsNullOrWhiteSpace(_clienteActual?.RncCedula);
+
+                if (!tieneDocumentoCliente && tipoECFId != 2)
+                    throw new InvalidOperationException(
+                        "Consumidor final solo puede facturarse con comprobante de consumo.");
+
+                if (tieneDocumentoCliente && tipoECFId == 2)
+                {
+                    // opcional: permitirlo o no, según tu política
+                }
+
+                var formaPagoFiscal = primerPago.FormaPagoCodigo;
+                if (string.IsNullOrWhiteSpace(formaPagoFiscal))
+                    throw new InvalidOperationException(
+                        "El pago no trae FormaPagoCodigo. Debe venir correctamente alimentado desde tabla.");
+
+                var tipoPagoECFId = ResolverTipoPagoECFId(formaPagoFiscal);
                 if (tipoPagoECFId <= 0)
                     throw new InvalidOperationException("El tipo de pago ECF no es válido.");
-
-                if (string.IsNullOrWhiteSpace(formaPagoFiscal))
-                    throw new InvalidOperationException("La forma de pago fiscal no es válida.");
 
                 var ventaId = _pos.CerrarVenta(
                     usuario: _usuarioPos,
@@ -1400,11 +1483,23 @@ ORDER BY TRY_CONVERT(INT, FormaPagoCodigo);");
             }
         }
 
+        private readonly ECFTipoPagoRepository _ecfTipoPagoRepo = new();
 
-
-        private int ResolverTipoPagoECFId()
+        private int ResolverTipoPagoECFId(string formaPagoCodigo)
         {
-            return 1; // POS rápida = Contado
+            if (string.IsNullOrWhiteSpace(formaPagoCodigo))
+                throw new InvalidOperationException("La forma de pago fiscal está vacía.");
+
+            var tipos = _ecfTipoPagoRepo.ListarActivos();
+
+            var item = tipos.FirstOrDefault(x =>
+                string.Equals(x.CodigoDGII, formaPagoCodigo, StringComparison.OrdinalIgnoreCase));
+
+            if (item == null || item.TipoPagoECFId <= 0)
+                throw new InvalidOperationException(
+                    $"No existe configuración en ECFTipoPago para la forma de pago fiscal '{formaPagoCodigo}'.");
+
+            return item.TipoPagoECFId;
         }
 
         private void LimpiarVentaInterna()
@@ -1522,9 +1617,14 @@ ORDER BY TRY_CONVERT(INT, FormaPagoCodigo);");
 
         private void ActualizarResumenSesion()
         {
+            if (lblVentasDia == null || lblTransacciones == null || lblTicketPromedio == null)
+                return;
+
             var actual = _pos.Totales();
+
             lblVentasDia.Text = $"RD$ {_montoSesion + actual.Total:N2}";
             lblTransacciones.Text = _ventasSesion.ToString("N0");
+
             var promedio = _ventasSesion <= 0 ? 0m : _montoSesion / _ventasSesion;
             lblTicketPromedio.Text = $"RD$ {promedio:N2}";
         }

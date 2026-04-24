@@ -10,7 +10,7 @@
 
 #pragma warning disable 1591
 
-namespace Presentacion.Reportes.Facturacion {
+namespace Andloe.Presentacion.Reportes.Facturacion {
     
     
     /// <summary>

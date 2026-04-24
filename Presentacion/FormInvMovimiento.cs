@@ -8,7 +8,7 @@ using Andloe.Data;
 using Andloe.Entidad;
 using Andloe.Logica;
 
-namespace Presentation
+namespace Andloe.Presentacion
 {
     public partial class FormInvMovimiento : Form
     {

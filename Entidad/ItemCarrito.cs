@@ -7,39 +7,47 @@
         public decimal Cantidad { get; set; }
         public decimal PrecioUnit { get; set; }
         public decimal ItbisPct { get; set; }
+        public bool PrecioIncluyeITBIS { get; set; }
 
-
-
-        // =====================================
-        //  NUEVOS CAMPOS PARA DESCUENTOS
-        // =====================================
-
-        // *** NUEVO DESCUENTO
         public decimal DescuentoPct { get; set; } = 0m;
-
-        // *** NUEVO DESCUENTO
         public decimal DescuentoMonto { get; set; } = 0m;
 
-        // =====================================
-        //  CAMPOS CALCULADOS
-        // =====================================
+        public decimal SubtotalBruto => Math.Round(Cantidad * PrecioUnit, 2);
 
-        // *** NUEVO DESCUENTO
-        public decimal SubtotalBruto =>
-            Cantidad * PrecioUnit;
+        public decimal SubtotalNeto
+        {
+            get
+            {
+                var neto = SubtotalBruto - DescuentoMonto;
+                return neto < 0m ? 0m : Math.Round(neto, 2);
+            }
+        }
 
-        // *** NUEVO DESCUENTO
-        public decimal SubtotalNeto =>
-            SubtotalBruto - DescuentoMonto;
+        public decimal Importe
+        {
+            get
+            {
+                if (!PrecioIncluyeITBIS || ItbisPct <= 0m)
+                    return SubtotalNeto;
 
-        public decimal ItbisMonto =>
-            Math.Round(SubtotalNeto * (ItbisPct / 100m), 2);
+                return Math.Round(SubtotalNeto / (1 + (ItbisPct / 100m)), 2);
+            }
+        }
 
-        public decimal Total =>
-            Math.Round(SubtotalNeto + ItbisMonto, 2);
+        public decimal ItbisMonto
+        {
+            get
+            {
+                if (ItbisPct <= 0m)
+                    return 0m;
 
-        // Compatibilidad con lo existente:
-        public decimal Importe =>
-            SubtotalNeto; // Igual que antes, pero ahora con descuento aplicado
+                if (PrecioIncluyeITBIS)
+                    return Math.Round(SubtotalNeto - Importe, 2);
+
+                return Math.Round(Importe * (ItbisPct / 100m), 2);
+            }
+        }
+
+        public decimal Total => Math.Round(Importe + ItbisMonto, 2);
     }
 }

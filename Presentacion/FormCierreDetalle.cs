@@ -9,7 +9,7 @@ using System.Linq;
 using System.Windows.Forms;
 
 
-namespace Presentation
+namespace Andloe.Presentacion
 {
     public partial class FormCierreDetalle : Form
     {
@@ -87,9 +87,9 @@ namespace Presentation
 
             dgvPagos.Columns.Add(new DataGridViewTextBoxColumn
             {
-                Name = "MedioPagoId",
-                DataPropertyName = "MedioPagoId",
-                HeaderText = "ID"
+                Name = "FormaPagoCodigo",
+                DataPropertyName = "FormaPagoCodigo",
+                HeaderText = "Código"
             });
 
             dgvPagos.Columns.Add(new DataGridViewTextBoxColumn
@@ -268,12 +268,12 @@ namespace Presentation
                 return;
             }
 
-            // 1) AGRUPAR PAGOS POR MEDIO DE PAGO
+            // 1) AGRUPAR PAGOS POR FORMA DE PAGO
             var grupos = lista
-                .GroupBy(x => new { x.MedioPagoId, x.MedioPagoNombre })
+                .GroupBy(x => new { x.FormaPagoCodigo, x.MedioPagoNombre })
                 .Select(g => new
                 {
-                    MedioPagoId = g.Key.MedioPagoId,
+                    FormaPagoCodigo = g.Key.FormaPagoCodigo,
                     MedioPago = g.Key.MedioPagoNombre,
                     Total = g.Sum(x => x.Monto),
                     Cantidad = g.Count()
@@ -285,7 +285,7 @@ namespace Presentation
 
             // 2) DATA PARA EL GRID
             var dt = new DataTable();
-            dt.Columns.Add("MedioPagoId", typeof(int));
+            dt.Columns.Add("FormaPagoCodigo", typeof(string));
             dt.Columns.Add("MedioPago", typeof(string));
             dt.Columns.Add("Total", typeof(decimal));
             dt.Columns.Add("Cantidad", typeof(int));
@@ -295,13 +295,14 @@ namespace Presentation
             foreach (var g in grupos)
             {
                 decimal porcentaje = totalGeneral > 0 ? (g.Total * 100m / totalGeneral) : 0m;
+
                 dt.Rows.Add(
-                    g.MedioPagoId,
+                    g.FormaPagoCodigo,
                     g.MedioPago,
                     g.Total,
                     g.Cantidad,
                     porcentaje,
-                    false   // EsTotal
+                    false
                 );
             }
 
@@ -309,18 +310,17 @@ namespace Presentation
             if (grupos.Count > 0)
             {
                 dt.Rows.Add(
-                    DBNull.Value,               // MedioPagoId
-                    "TOTAL GENERAL",            // MedioPago
-                    totalGeneral,               // Total
+                    DBNull.Value,
+                    "TOTAL GENERAL",
+                    totalGeneral,
                     grupos.Sum(x => x.Cantidad),
-                    100m,                       // Porcentaje
-                    true                        // EsTotal
+                    100m,
+                    true
                 );
             }
 
             dgvPagos.DataSource = dt;
         }
-
         // ---------------------------------------------------
         //  FONDO / TOTALES
         // ---------------------------------------------------

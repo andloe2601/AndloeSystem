@@ -4,7 +4,7 @@ using System;
 using System.Linq;
 using System.Windows.Forms;
 
-namespace Presentation
+namespace Andloe.Presentacion
 {
     public partial class FormCatalogoCuentas : Form
     {

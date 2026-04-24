@@ -5,7 +5,7 @@ using System.Windows.Forms;
 using Andloe.Logica;
 using Andloe.Data;
 
-namespace Presentation
+namespace Andloe.Presentacion
 {
     public partial class FormCajaAdmin : Form
     {

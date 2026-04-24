@@ -1,5 +1,8 @@
 ﻿using Andloe.Data;
 using Andloe.Entidad;
+using Andloe.Logica.DGII;
+using Data;
+using Logica;
 using Microsoft.Data.SqlClient;
 using System;
 using System.Collections.Generic;
@@ -42,84 +45,80 @@ namespace Andloe.Logica
             if (string.IsNullOrWhiteSpace(usuario))
                 throw new InvalidOperationException("Usuario inválido.");
 
-            using var cn = Db.GetOpenConnection();
-            using var tx = cn.BeginTransaction(IsolationLevel.ReadCommitted);
+            int facturaId;
+            string numeroDocumento;
 
-            try
+            using (var cn = Db.GetOpenConnection())
+            using (var tx = cn.BeginTransaction(IsolationLevel.ReadCommitted))
             {
-                var venta = ObtenerVentaCab(cn, tx, ventaId);
-                if (venta == null)
-                    throw new InvalidOperationException($"No se encontró la venta {ventaId}.");
-
-                var existente = BuscarFacturaExistentePorOrigen(cn, tx, venta.NoDocumento);
-                if (existente != null)
+                try
                 {
+                    var venta = ObtenerVentaCab(cn, tx, ventaId);
+                    if (venta == null)
+                        throw new InvalidOperationException($"No se encontró la venta {ventaId}.");
+
+                    var existente = BuscarFacturaExistentePorOrigen(cn, tx, venta.NoDocumento);
+                    if (existente != null)
+                    {
+                        tx.Commit();
+                        return existente;
+                    }
+
+                    var lineas = ObtenerVentaLineas(cn, tx, ventaId);
+                    if (lineas.Count == 0)
+                        throw new InvalidOperationException("La venta no tiene líneas para facturar.");
+
+                    var tipoEcf = ObtenerTipoEcf(cn, tx, tipoECFId);
+                    if (tipoEcf == null)
+                        throw new InvalidOperationException($"No existe ECFTipoDocumento con id {tipoECFId}.");
+
+                    var tipoPago = ObtenerTipoPagoEcf(cn, tx, tipoPagoECFId);
+                    if (tipoPago == null)
+                        throw new InvalidOperationException($"No existe ECFTipoPago con id {tipoPagoECFId}.");
+
+                    var contexto = ResolverContextoFactura(cn, tx, venta);
+                    var cliente = ObtenerClienteSnapshot(venta.ClienteCodigo);
+
+                    if (tipoEcf.AplicaCompradorRnc && string.IsNullOrWhiteSpace(cliente.RncCedula))
+                        throw new InvalidOperationException(
+                            "El tipo de comprobante seleccionado requiere documento del comprador y la venta no tiene RNC/Cédula válido.");
+
+                    numeroDocumento = ResolverNumeroDocumento(cn, tx, venta);
+
+                    facturaId = InsertarFacturaCab(
+                        cn,
+                        tx,
+                        venta,
+                        cliente,
+                        contexto,
+                        numeroDocumento,
+                        tipoECFId,
+                        tipoPagoECFId,
+                        formaPagoFiscal,
+                        usuario);
+
+                    InsertarFacturaDet(cn, tx, facturaId, lineas);
+                    InsertarFacturaPago(cn, tx, facturaId, venta, usuario);
+                    InsertarFacturaFormaPago(cn, tx, facturaId, ventaId);
+                    CrearEcfDocumentoBase(
+                        cn,
+                        tx,
+                        facturaId,
+                        tipoECFId,
+                        venta.Total);
+
+                    MarcarVentaComoFacturadaFiscalmente(cn, tx, ventaId, facturaId);
+
                     tx.Commit();
-                    return existente;
                 }
-
-                var lineas = ObtenerVentaLineas(cn, tx, ventaId);
-                if (lineas.Count == 0)
-                    throw new InvalidOperationException("La venta no tiene líneas para facturar.");
-
-                var tipoEcf = ObtenerTipoEcf(cn, tx, tipoECFId);
-                if (tipoEcf == null)
-                    throw new InvalidOperationException($"No existe ECFTipoDocumento con id {tipoECFId}.");
-
-                var tipoPago = ObtenerTipoPagoEcf(cn, tx, tipoPagoECFId);
-                if (tipoPago == null)
-                    throw new InvalidOperationException($"No existe ECFTipoPago con id {tipoPagoECFId}.");
-
-                var contexto = ResolverContextoFactura(cn, tx, venta);
-                var cliente = ObtenerClienteSnapshot(venta.ClienteCodigo);
-
-                if (tipoEcf.AplicaCompradorRnc && string.IsNullOrWhiteSpace(cliente.RncCedula))
-                    throw new InvalidOperationException(
-                        "El tipo de comprobante seleccionado requiere documento del comprador y la venta no tiene RNC/Cédula válido.");
-
-                var numeroDocumento = ResolverNumeroDocumento(cn, tx, venta);
-                var facturaId = InsertarFacturaCab(
-                    cn,
-                    tx,
-                    venta,
-                    cliente,
-                    contexto,
-                    numeroDocumento,
-                    tipoECFId,
-                    tipoPagoECFId,
-                    formaPagoFiscal,
-                    usuario);
-
-                InsertarFacturaDet(cn, tx, facturaId, lineas);
-                InsertarFacturaPago(cn, tx, facturaId, venta, usuario);
-                InsertarFacturaFormaPago(cn, tx, facturaId, ventaId, formaPagoFiscal);
-                CrearEcfDocumentoBase(
-    cn,
-    tx,
-    facturaId,
-    tipoECFId,
-    venta.Total);
-
-
-                MarcarVentaComoFacturadaFiscalmente(cn, tx, ventaId, facturaId);
-
-                tx.Commit();
-
-                return new PosFiscalResult
+                catch
                 {
-                    FacturaId = facturaId,
-                    NumeroDocumento = numeroDocumento,
-                    ENCF = "",
-                    TrackId = null,
-                    EstadoECF = ESTADO_ECF,
-                    EcfDocumentoCreado = true
-                };
+                    tx.Rollback();
+                    throw;
+                }
             }
-            catch
-            {
-                tx.Rollback();
-                throw;
-            }
+
+            return ProcesarDocumentoFiscalGenerado(facturaId, numeroDocumento, usuario);
         }
 
         private VentaCabLite? ObtenerVentaCab(SqlConnection cn, SqlTransaction tx, long ventaId)
@@ -381,18 +380,17 @@ WHERE c.CajaId = @CajaId;", cn, tx);
         private ClienteSnapshotLite ObtenerClienteSnapshot(string? clienteCodigo)
         {
             if (string.IsNullOrWhiteSpace(clienteCodigo))
-            {
-                return new ClienteSnapshotLite();
-            }
+                throw new InvalidOperationException(
+                    "La venta no tiene ClienteCodigo. No se puede generar factura fiscal sin cliente configurado.");
 
             var dto = _clienteRepo.BuscarPorCodigoORnc(clienteCodigo);
             if (dto == null)
-            {
-                return new ClienteSnapshotLite
-                {
-                    Codigo = clienteCodigo
-                };
-            }
+                throw new InvalidOperationException(
+                    $"No se encontró el cliente '{clienteCodigo}' para generar la factura fiscal.");
+
+            if (string.IsNullOrWhiteSpace(dto.Nombre))
+                throw new InvalidOperationException(
+                    $"El cliente '{clienteCodigo}' no tiene nombre válido para facturación fiscal.");
 
             return new ClienteSnapshotLite
             {
@@ -456,17 +454,38 @@ WHERE NumeroDocumento = @NumeroDocumento;", cn, tx);
         }
 
         private int InsertarFacturaCab(
-            SqlConnection cn,
-            SqlTransaction tx,
-            VentaCabLite venta,
-            ClienteSnapshotLite cliente,
-            FacturaContextoLite contexto,
-            string numeroDocumento,
-            int tipoECFId,
-            int tipoPagoECFId,
-            string formaPagoFiscal,
-            string usuario)
+    SqlConnection cn,
+    SqlTransaction tx,
+    VentaCabLite venta,
+    ClienteSnapshotLite cliente,
+    FacturaContextoLite contexto,
+    string numeroDocumento,
+    int tipoECFId,
+    int tipoPagoECFId,
+    string formaPagoFiscal,
+    string usuario)
         {
+            var nombreClienteFiscal = Coalesce(cliente.Nombre, venta.NombreCliente);
+            if (string.IsNullOrWhiteSpace(nombreClienteFiscal))
+                throw new InvalidOperationException(
+                    "La venta no tiene nombre de cliente fiscal válido. Verifique la configuración del cliente en POS.");
+
+            var tipoIngresoId = 1;
+
+            var prefijo = ResolverPrefijoEcfDesdeTipoId(tipoECFId);
+            var tipoId = int.Parse(prefijo.Substring(1, 2));
+
+            var facRepo = new FacturaRepository();
+            var fechaVencimientoSecuencia = facRepo.ObtenerFechaVencimientoSecuencia(
+                empresaId: contexto.EmpresaId,
+                sucursalId: contexto.SucursalId ?? 1,
+                cajaId: contexto.CajaId,
+                tipoId: tipoId,
+                prefijo: prefijo);
+
+            if (!fechaVencimientoSecuencia.HasValue)
+                throw new InvalidOperationException("No existe rango NCF válido para este tipo de comprobante.");
+
             using var cmd = new SqlCommand(@"
 INSERT INTO dbo.FacturaCab
 (
@@ -508,7 +527,9 @@ INSERT INTO dbo.FacturaCab
     MontoGravadoTotal,
     MontoExentoTotal,
     EstadoECF,
-    TipoPagoECFHeader
+    TipoPagoECFHeader,
+    TipoIngresoId,
+    FechaVencimientoSecuencia
 )
 OUTPUT INSERTED.FacturaId
 VALUES
@@ -551,7 +572,9 @@ VALUES
     @MontoGravadoTotal,
     @MontoExentoTotal,
     @EstadoECF,
-    @TipoPagoECFHeader
+    @TipoPagoECFHeader,
+    @TipoIngresoId,
+    @FechaVencimientoSecuencia
 );", cn, tx);
 
             cmd.Parameters.Add("@TipoDocumento", SqlDbType.VarChar, 10).Value = TIPO_DOCUMENTO_FACTURA;
@@ -559,8 +582,7 @@ VALUES
             cmd.Parameters.Add("@FechaDocumento", SqlDbType.DateTime).Value = venta.Fecha;
             cmd.Parameters.Add("@FechaVencimiento", SqlDbType.DateTime).Value = DBNull.Value;
             cmd.Parameters.Add("@ClienteId", SqlDbType.Int).Value = (object?)venta.ClienteId ?? DBNull.Value;
-            cmd.Parameters.Add("@NombreCliente", SqlDbType.NVarChar, 300).Value =
-                (object?)Coalesce(cliente.Nombre, venta.NombreCliente, "CONSUMIDOR FINAL") ?? DBNull.Value;
+            cmd.Parameters.Add("@NombreCliente", SqlDbType.NVarChar, 300).Value = nombreClienteFiscal;
             cmd.Parameters.Add("@DocumentoCliente", SqlDbType.NVarChar, 60).Value =
                 (object?)cliente.RncCedula ?? DBNull.Value;
 
@@ -597,7 +619,7 @@ VALUES
             cmd.Parameters.Add("@RncCompradorSnapshot", SqlDbType.VarChar, 20).Value =
                 (object?)cliente.RncCedula ?? DBNull.Value;
             cmd.Parameters.Add("@RazonSocialCompradorSnapshot", SqlDbType.NVarChar, 400).Value =
-                (object?)Coalesce(cliente.Nombre, venta.NombreCliente, "CONSUMIDOR FINAL") ?? DBNull.Value;
+                nombreClienteFiscal;
             cmd.Parameters.Add("@CorreoCompradorSnapshot", SqlDbType.NVarChar, 400).Value =
                 (object?)Coalesce(cliente.Correo, venta.EmailCliente) ?? DBNull.Value;
             cmd.Parameters.Add("@DireccionCompradorSnapshot", SqlDbType.NVarChar, 800).Value =
@@ -609,14 +631,17 @@ VALUES
             cmd.Parameters.Add("@EstadoECF", SqlDbType.VarChar, 20).Value = ESTADO_ECF;
             cmd.Parameters.Add("@TipoPagoECFHeader", SqlDbType.VarChar, 1).Value = formaPagoFiscal;
 
+            cmd.Parameters.Add("@TipoIngresoId", SqlDbType.Int).Value = tipoIngresoId;
+            cmd.Parameters.Add("@FechaVencimientoSecuencia", SqlDbType.Date).Value = fechaVencimientoSecuencia;
+
             return Convert.ToInt32(cmd.ExecuteScalar());
         }
 
         private void InsertarFacturaDet(
-            SqlConnection cn,
-            SqlTransaction tx,
-            int facturaId,
-            IEnumerable<VentaLinLite> lineas)
+     SqlConnection cn,
+     SqlTransaction tx,
+     int facturaId,
+     IEnumerable<VentaLinLite> lineas)
         {
             foreach (var l in lineas.OrderBy(x => x.Linea))
             {
@@ -626,7 +651,9 @@ INSERT INTO dbo.FacturaDet
     FacturaId,
     ProductoCodigo,
     Descripcion,
+    DescripcionFiscal,
     Unidad,
+    UnidadMedidaDGII,
     Cantidad,
     PrecioUnitario,
     DescuentoPct,
@@ -654,7 +681,9 @@ VALUES
     @FacturaId,
     @ProductoCodigo,
     @Descripcion,
+    @DescripcionFiscal,
     @Unidad,
+    @UnidadMedidaDGII,
     @Cantidad,
     @PrecioUnitario,
     @DescuentoPct,
@@ -684,8 +713,13 @@ VALUES
 
                 cmd.Parameters.Add("@ProductoCodigo", SqlDbType.VarChar, 20).Value =
                     string.IsNullOrWhiteSpace(productoCodigo) ? DBNull.Value : productoCodigo;
+
                 cmd.Parameters.Add("@Descripcion", SqlDbType.NVarChar, 300).Value = l.Descripcion;
+                cmd.Parameters.Add("@DescripcionFiscal", SqlDbType.NVarChar, 500).Value =
+                    string.IsNullOrWhiteSpace(l.Descripcion) ? "ITEM POS" : l.Descripcion;
+
                 cmd.Parameters.Add("@Unidad", SqlDbType.VarChar, 10).Value = unidad;
+                cmd.Parameters.Add("@UnidadMedidaDGII", SqlDbType.VarChar, 5).Value = "43";
 
                 AddDecimal(cmd, "@Cantidad", l.Cantidad, 18, 2);
                 AddDecimal(cmd, "@PrecioUnitario", l.PrecioUnitario);
@@ -709,7 +743,7 @@ VALUES
                 cmd.Parameters.Add("@EsExento", SqlDbType.Bit).Value = l.ItbisPorc <= 0;
                 AddDecimal(cmd, "@PrecioUnitarioBase", l.PrecioUnitario, 18, 4);
                 AddDecimal(cmd, "@SubtotalLineaAntesImpuesto", l.ImporteMoneda);
-                cmd.Parameters.Add("@IndicadorITBISIncluido", SqlDbType.Bit).Value = false;
+                cmd.Parameters.Add("@IndicadorITBISIncluido", SqlDbType.Bit).Value = l.PrecioIncluyeITBIS;
                 cmd.Parameters.Add("@CodigoProducto", SqlDbType.VarChar, 20).Value =
                     (object?)Coalesce(l.ProductoCodigo, l.NoProducto) ?? DBNull.Value;
                 AddDecimal(cmd, "@SubtotalLinea", l.ImporteMoneda, 18, 6);
@@ -763,40 +797,22 @@ VALUES
             SqlConnection cn,
             SqlTransaction tx,
             int facturaId,
-            long ventaId,
-            string formaPagoFiscalDefault)
+            long ventaId)
         {
             var pagos = ObtenerPagosPos(cn, tx, ventaId);
 
             if (pagos.Count == 0)
-            {
-                using var cmdSingle = new SqlCommand(@"
-INSERT INTO dbo.FacturaFormaPago
-(
-    FacturaId,
-    FormaPago,
-    MontoPago,
-    Orden
-)
-VALUES
-(
-    @FacturaId,
-    @FormaPago,
-    @MontoPago,
-    @Orden
-);", cn, tx);
-
-                cmdSingle.Parameters.Add("@FacturaId", SqlDbType.Int).Value = facturaId;
-                cmdSingle.Parameters.Add("@FormaPago", SqlDbType.VarChar, 2).Value = formaPagoFiscalDefault;
-                AddDecimal(cmdSingle, "@MontoPago", 0m);
-                cmdSingle.Parameters.Add("@Orden", SqlDbType.Int).Value = 1;
-                cmdSingle.ExecuteNonQuery();
-                return;
-            }
+                throw new InvalidOperationException(
+                    "La venta no tiene pagos registrados en POS_Pago. No se puede generar FacturaFormaPago.");
 
             var orden = 1;
+
             foreach (var p in pagos)
             {
+                if (string.IsNullOrWhiteSpace(p.FormaPagoCodigo))
+                    throw new InvalidOperationException(
+                        "Un pago POS no tiene FormaPagoCodigo. La data está inconsistente.");
+
                 using var cmd = new SqlCommand(@"
 INSERT INTO dbo.FacturaFormaPago
 (
@@ -814,7 +830,7 @@ VALUES
 );", cn, tx);
 
                 cmd.Parameters.Add("@FacturaId", SqlDbType.Int).Value = facturaId;
-                cmd.Parameters.Add("@FormaPago", SqlDbType.VarChar, 2).Value = MapearFormaPagoFiscal(p.NombreMedio, formaPagoFiscalDefault);
+                cmd.Parameters.Add("@FormaPago", SqlDbType.VarChar, 2).Value = p.FormaPagoCodigo;
                 AddDecimal(cmd, "@MontoPago", p.Monto);
                 cmd.Parameters.Add("@Orden", SqlDbType.Int).Value = orden++;
 
@@ -829,9 +845,8 @@ VALUES
             using var cmd = new SqlCommand(@"
 SELECT
     p.Monto,
-    mp.Nombre
+    p.FormaPagoCodigo
 FROM dbo.POS_Pago p
-LEFT JOIN dbo.MedioPago mp ON mp.MedioPagoId = p.MedioPagoId
 WHERE p.VentaId = @VentaId
 ORDER BY p.PagoId;", cn, tx);
 
@@ -843,7 +858,7 @@ ORDER BY p.PagoId;", cn, tx);
                 lista.Add(new PagoPosLite
                 {
                     Monto = rd.GetDecimal(0),
-                    NombreMedio = rd.IsDBNull(1) ? null : rd.GetString(1)
+                    FormaPagoCodigo = rd.IsDBNull(1) ? null : rd.GetString(1)
                 });
             }
 
@@ -851,11 +866,11 @@ ORDER BY p.PagoId;", cn, tx);
         }
 
         private void CrearEcfDocumentoBase(
-    SqlConnection cn,
-    SqlTransaction tx,
-    int facturaId,
-    int tipoECFId,
-    decimal montoTotal)
+            SqlConnection cn,
+            SqlTransaction tx,
+            int facturaId,
+            int tipoECFId,
+            decimal montoTotal)
         {
             using var existeCmd = new SqlCommand(@"
 SELECT COUNT(1)
@@ -926,25 +941,120 @@ VALUES
             cmd.ExecuteNonQuery();
         }
 
-
-
-        private string MapearFormaPagoFiscal(string? nombreMedio, string defaultCode)
+        private FacturaCabEcfLite? ObtenerFacturaCabParaEcf(SqlConnection cn, int facturaId)
         {
-            var key = (nombreMedio ?? string.Empty).Trim().ToLowerInvariant();
+            using var cmd = new SqlCommand(@"
+SELECT TOP (1)
+    FacturaId,
+    TipoECFId,
+    ENCF
+FROM dbo.FacturaCab
+WHERE FacturaId = @FacturaId;", cn);
 
-            if (string.IsNullOrWhiteSpace(key))
-                return defaultCode;
+            cmd.Parameters.Add("@FacturaId", SqlDbType.Int).Value = facturaId;
 
-            if (key.Contains("efect"))
-                return "1";
+            using var rd = cmd.ExecuteReader();
+            if (!rd.Read())
+                return null;
 
-            if (key.Contains("transfer") || key.Contains("dep") || key.Contains("cheque"))
-                return "2";
+            return new FacturaCabEcfLite
+            {
+                FacturaId = rd.GetInt32(0),
+                TipoECFId = rd.IsDBNull(1) ? 0 : rd.GetInt32(1),
+                ENCF = rd.IsDBNull(2) ? null : rd.GetString(2)
+            };
+        }
 
-            if (key.Contains("tarje"))
-                return "3";
+        private static string ResolverPrefijoEcfDesdeTipoId(int tipoEcfId)
+        {
+            return tipoEcfId switch
+            {
+                1 => "E31",
+                2 => "E32",
+                3 => "E33",
+                4 => "E34",
+                5 => "E41",
+                6 => "E43",
+                7 => "E44",
+                8 => "E45",
+                9 => "E46",
+                10 => "E47",
+                _ => throw new InvalidOperationException("TipoECFId no reconocido para resolver prefijo e-CF.")
+            };
+        }
 
-            return "8";
+        private PosFiscalResult ProcesarDocumentoFiscalGenerado(int facturaId, string numeroDocumento, string usuario)
+        {
+            if (facturaId <= 0)
+                throw new InvalidOperationException("FacturaId inválido para procesar e-CF.");
+
+            try
+            {
+                using var cn = Db.GetOpenConnection();
+
+                var cab = ObtenerFacturaCabParaEcf(cn, facturaId);
+                if (cab == null)
+                    throw new InvalidOperationException($"No se pudo cargar la factura {facturaId} para e-CF.");
+
+                if (cab.TipoECFId <= 0)
+                    throw new InvalidOperationException("La factura no tiene TipoECFId válido.");
+
+                var prefijo = ResolverPrefijoEcfDesdeTipoId(cab.TipoECFId);
+                var tipoEcf = int.Parse(prefijo.Substring(1, 2));
+
+                var s = SesionService.Current;
+                var cajaId = s.CajaId ?? 0;
+
+                var encf = string.IsNullOrWhiteSpace(cab.ENCF)
+                    ? new ECFSqlRepository().GenerarENcf(
+                        empresaId: s.EmpresaId,
+                        sucursalId: s.SucursalId,
+                        cajaId: cajaId,
+                        facturaId: facturaId,
+                        tipoEcf: tipoEcf,
+                        prefijo: prefijo)
+                    : cab.ENCF;
+
+                if (string.IsNullOrWhiteSpace(encf))
+                    throw new InvalidOperationException("No se pudo generar el eNCF para la factura.");
+
+                var ecfSvc = new ECFService();
+                ecfSvc.GenerarXmlPendiente(facturaId, tipoEcf, encf);
+                var alanube = new ECFAlanubeService();
+                var resp = alanube.EnviarFactura(facturaId, usuario);
+
+                using var cmd = new SqlCommand(@"
+SELECT TOP (1)
+    d.ENCF,
+    d.TrackId,
+    d.EstadoProceso
+FROM dbo.ECFDocumento d
+WHERE d.FacturaId = @FacturaId
+ORDER BY d.ECFDocumentoId DESC;", cn);
+
+                cmd.Parameters.Add("@FacturaId", SqlDbType.Int).Value = facturaId;
+
+                using var rd = cmd.ExecuteReader();
+                if (!rd.Read())
+                    throw new InvalidOperationException(
+                        $"No se encontró ECFDocumento luego de generar XML pendiente. FacturaId={facturaId}");
+
+                return new PosFiscalResult
+                {
+                    FacturaId = facturaId,
+                    NumeroDocumento = numeroDocumento,
+                    ENCF = rd.IsDBNull(0) ? null : rd.GetString(0),
+                    TrackId = rd.IsDBNull(1) ? null : rd.GetString(1),
+                    EstadoECF = rd.IsDBNull(2) ? null : rd.GetString(2),
+                    EcfDocumentoCreado = true
+                };
+            }
+            catch (Exception ex)
+            {
+                throw new InvalidOperationException(
+                    $"La factura fiscal fue creada, pero falló el procesamiento e-CF. FacturaId={facturaId}. Detalle: {ex.Message}",
+                    ex);
+            }
         }
 
         private void MarcarVentaComoFacturadaFiscalmente(
@@ -993,6 +1103,8 @@ WHERE VentaId = @VentaId;", cn, tx);
             p.Scale = scale;
             p.Value = value;
         }
+
+        
 
         private sealed class VentaCabLite
         {
@@ -1045,6 +1157,7 @@ WHERE VentaId = @VentaId;", cn, tx);
             public decimal TotalMoneda { get; set; }
             public decimal DescuentoPct { get; set; }
             public decimal DescuentoMonto { get; set; }
+            public bool PrecioIncluyeITBIS { get; set; }
         }
 
         private sealed class TipoEcfLite
@@ -1083,7 +1196,14 @@ WHERE VentaId = @VentaId;", cn, tx);
         private sealed class PagoPosLite
         {
             public decimal Monto { get; set; }
-            public string? NombreMedio { get; set; }
+            public string? FormaPagoCodigo { get; set; }
+        }
+
+        private sealed class FacturaCabEcfLite
+        {
+            public int FacturaId { get; set; }
+            public int TipoECFId { get; set; }
+            public string? ENCF { get; set; }
         }
     }
 }

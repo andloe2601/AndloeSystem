@@ -3,7 +3,7 @@ using System.Linq;
 using System.Windows.Forms;
 using Andloe.Data;
 
-namespace Presentation
+namespace Andloe.Presentacion
 {
     public partial class FormPromoProductoDescuento : Form
     {

@@ -4,7 +4,7 @@ using System.Windows.Forms;
 using Andloe.Data;
 using Andloe.Entidad;
 
-namespace Presentation
+namespace Andloe.Presentacion
 {
     public partial class FormFondoCaja : Form
     {

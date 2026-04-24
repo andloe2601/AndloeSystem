@@ -21,14 +21,13 @@ namespace Andloe.Data
             decimal totalVentas = 0m;
             decimal totalPagos = 0m;
 
-            // FACTURAS NO INCLUIDAS EN CIERRE
             using (var cmd = new SqlCommand(@"
                 SELECT ISNULL(SUM(Total), 0)
                 FROM dbo.VentaCab
-                WHERE Fecha        >= @Desde
-                  AND Fecha        <= @Hasta
+                WHERE Fecha >= @Desde
+                  AND Fecha <= @Hasta
                   AND POS_CajaNumero = @CajaNumero
-                  AND Estado       = 'FACTURADA'
+                  AND Estado = 'FACTURADA'
                   AND IncluidaEnCierre = 0;", cn))
             {
                 cmd.Parameters.Add("@Desde", SqlDbType.DateTime).Value = desde;
@@ -40,14 +39,13 @@ namespace Andloe.Data
                     totalVentas = Convert.ToDecimal(obj);
             }
 
-            // PAGOS NO INCLUIDOS EN CIERRE
             using (var cmd = new SqlCommand(@"
                 SELECT ISNULL(SUM(Monto), 0)
                 FROM dbo.POS_Pago
-                WHERE Fecha            >= @Desde
-                  AND Fecha            <= @Hasta
-                  AND (POS_CajaNumero  = @CajaNumero OR ISNULL(POS_CajaNumero,'') = '')
-                  AND Estado           = 'APLICADO'
+                WHERE Fecha >= @Desde
+                  AND Fecha <= @Hasta
+                  AND (POS_CajaNumero = @CajaNumero OR ISNULL(POS_CajaNumero,'') = '')
+                  AND Estado = 'APLICADO'
                   AND (IncluidoEnCierre = 0 OR IncluidoEnCierre IS NULL);", cn))
             {
                 cmd.Parameters.Add("@Desde", SqlDbType.DateTime).Value = desde;
@@ -71,7 +69,6 @@ namespace Andloe.Data
         //  CONSULTAS POR CIERREID (DETALLE)
         // =====================================
 
-        // Trae ventas por caja+rango del cierre, con término de pago
         public DataTable ListarVentasPorCierre(long cierreId)
         {
             using var cn = Db.GetOpenConnection();
@@ -87,19 +84,28 @@ namespace Andloe.Data
                     v.ItbisMoneda,
                     v.TotalMoneda,
                     v.Estado,
-                    v.MedioPagoId,
-                    mp.Nombre       AS MedioPago,
+                    fp.FormaPagoCodigo,
+                    fp.Descripcion AS MedioPago,
                     v.MontoPago,
                     v.TerminoPagoId,
-                    tp.Descripcion  AS TerminoPago
+                    tp.Descripcion AS TerminoPago
                 FROM dbo.CajaCierreCab c
                 INNER JOIN dbo.VentaCab v
                     ON  v.POS_CajaNumero = c.CajaNumero
                     AND v.CajaId         = c.CajaId
                     AND v.Fecha         >= c.FechaDesde
                     AND v.Fecha         <= c.FechaHasta
-                LEFT JOIN dbo.MedioPago mp
-                    ON mp.MedioPagoId = v.MedioPagoId
+                OUTER APPLY
+                (
+                    SELECT TOP (1)
+                        p.FormaPagoCodigo,
+                        f.Descripcion
+                    FROM dbo.POS_Pago p
+                    LEFT JOIN dbo.ECFFormaPagoCatalogo f
+                        ON f.FormaPagoCodigo = p.FormaPagoCodigo
+                    WHERE p.VentaId = v.VentaId
+                    ORDER BY p.PagoId
+                ) fp
                 LEFT JOIN dbo.TerminoPago tp
                     ON tp.TerminoPagoId = v.TerminoPagoId
                 WHERE c.CierreId = @CierreId
@@ -120,7 +126,8 @@ namespace Andloe.Data
             using var cmd = new SqlCommand(@"
                 SELECT
                     p.Fecha,
-                    mp.Nombre        AS MedioPago,
+                    p.FormaPagoCodigo,
+                    f.Descripcion AS MedioPago,
                     p.MonedaCodigo,
                     p.Monto,
                     p.MontoBase,
@@ -130,7 +137,8 @@ namespace Andloe.Data
                     p.Observacion,
                     p.Usuario
                 FROM dbo.POS_Pago p
-                LEFT JOIN dbo.MedioPago mp ON mp.MedioPagoId = p.MedioPagoId
+                LEFT JOIN dbo.ECFFormaPagoCatalogo f
+                    ON f.FormaPagoCodigo = p.FormaPagoCodigo
                 WHERE p.CierreId = @CierreId
                 ORDER BY p.Fecha;", cn);
 
@@ -183,7 +191,6 @@ namespace Andloe.Data
             {
                 long cierreId;
 
-                // INSERT en la cabecera de cierre (CajaCierreCab)
                 using (var cmd = new SqlCommand(@"
                     INSERT INTO dbo.CajaCierreCab
                     (
@@ -250,17 +257,16 @@ namespace Andloe.Data
                     cierreId = (obj == null || obj == DBNull.Value) ? 0L : Convert.ToInt64(obj);
                 }
 
-                // === VENTAS: marcar en cierre (por caja específica) ===
                 using (var cmdUpd = new SqlCommand(@"
                     UPDATE v
                     SET  v.CierreId         = @CierreId,
                          v.IncluidaEnCierre = 1
                     FROM dbo.VentaCab v
-                    WHERE v.POS_CajaNumero   = @CajaNumero
-                      AND v.CajaId           = @CajaId
-                      AND v.Fecha            >= @Desde
-                      AND v.Fecha            <= @Hasta
-                      AND v.Estado           = 'FACTURADA'
+                    WHERE v.POS_CajaNumero = @CajaNumero
+                      AND v.CajaId         = @CajaId
+                      AND v.Fecha          >= @Desde
+                      AND v.Fecha          <= @Hasta
+                      AND v.Estado         = 'FACTURADA'
                       AND (v.IncluidaEnCierre = 0 OR v.IncluidaEnCierre IS NULL)
                       AND (v.CierreId IS NULL OR v.CierreId = 0);", cn, tx))
                 {
@@ -272,16 +278,15 @@ namespace Andloe.Data
                     cmdUpd.ExecuteNonQuery();
                 }
 
-                // === PAGOS: marcar en cierre (por caja específica) ===
                 using (var cmdUpdPago = new SqlCommand(@"
                     UPDATE p
                     SET
                         p.CierreId         = @CierreId,
                         p.IncluidoEnCierre = 1,
-                        p.POS_CajaNumero   = CASE 
-                                                WHEN ISNULL(p.POS_CajaNumero,'') = '' 
-                                                THEN @CajaNumero 
-                                                ELSE p.POS_CajaNumero 
+                        p.POS_CajaNumero   = CASE
+                                                WHEN ISNULL(p.POS_CajaNumero,'') = ''
+                                                THEN @CajaNumero
+                                                ELSE p.POS_CajaNumero
                                              END
                     FROM dbo.POS_Pago p
                     WHERE (p.POS_CajaNumero = @CajaNumero OR ISNULL(p.POS_CajaNumero,'') = '')
@@ -410,9 +415,10 @@ namespace Andloe.Data
             using var cn = Db.GetOpenConnection();
             using var cmd = new SqlCommand(@"
                 SELECT
-                    p.Fecha,                 -- fecha del pago
-                    p.POS_CajaNumero,        -- número de caja
-                    mp.Nombre      AS Medio, -- nombre del medio de pago
+                    p.Fecha,
+                    p.POS_CajaNumero,
+                    p.FormaPagoCodigo,
+                    f.Descripcion AS Medio,
                     p.MonedaCodigo,
                     p.Monto,
                     p.MontoBase,
@@ -422,7 +428,8 @@ namespace Andloe.Data
                     p.Observacion,
                     p.Usuario
                 FROM dbo.POS_Pago p
-                LEFT JOIN dbo.MedioPago mp ON mp.MedioPagoId = p.MedioPagoId
+                LEFT JOIN dbo.ECFFormaPagoCatalogo f
+                    ON f.FormaPagoCodigo = p.FormaPagoCodigo
                 WHERE p.POS_CajaNumero = @CajaNumero
                   AND p.Fecha >= @Desde
                   AND p.Fecha <= @Hasta
@@ -467,7 +474,6 @@ namespace Andloe.Data
             return dt;
         }
 
-        // Cierre pagos datagrid view cierre detalles
         public List<CierrePagoPosDetalleDto> ListarPagosPosPorCierre(long cierreId)
         {
             var lista = new List<CierrePagoPosDetalleDto>();
@@ -480,14 +486,16 @@ namespace Andloe.Data
                     p.MonedaCodigo,
                     p.TasaCambio,
                     p.Monto,
-                    p.MedioPagoId,
-                    mp.Nombre AS MedioPagoNombre,
+                    p.MontoBase,
+                    p.FormaPagoCodigo,
+                    f.Descripcion AS MedioPagoNombre,
                     p.Referencia,
                     p.Entidad,
                     p.Observacion,
                     p.Usuario
                 FROM dbo.POS_Pago p
-                LEFT JOIN dbo.MedioPago mp ON p.MedioPagoId = mp.MedioPagoId
+                LEFT JOIN dbo.ECFFormaPagoCatalogo f
+                    ON p.FormaPagoCodigo = f.FormaPagoCodigo
                 WHERE p.CierreId = @CierreId
                   AND p.Estado = 'APLICADO'
                 ORDER BY p.Fecha;", cn);
@@ -505,7 +513,8 @@ namespace Andloe.Data
                     MonedaCodigo = dr["MonedaCodigo"] as string,
                     TasaCambio = dr.GetDecimal(dr.GetOrdinal("TasaCambio")),
                     Monto = dr.GetDecimal(dr.GetOrdinal("Monto")),
-                    MedioPagoId = dr.GetInt32(dr.GetOrdinal("MedioPagoId")),
+                    MontoBase = dr.GetDecimal(dr.GetOrdinal("MontoBase")),
+                    FormaPagoCodigo = dr["FormaPagoCodigo"] as string,
                     MedioPagoNombre = dr["MedioPagoNombre"] as string,
                     Referencia = dr["Referencia"] as string,
                     Entidad = dr["Entidad"] as string,
@@ -518,7 +527,6 @@ namespace Andloe.Data
             return lista;
         }
 
-        // actualizar pagos pos con cierre id (usado desde el service con cierreId)
         public void ActualizarPagosPosConCierreId(long cierreId, string cajaNumero, DateTime fechaDesde, DateTime fechaHasta)
         {
             using var cn = Db.GetOpenConnection();
@@ -552,7 +560,6 @@ namespace Andloe.Data
             cmd.ExecuteNonQuery();
         }
 
-        // nuevo método para insertar cierre desde DTO
         public long InsertarCierre(CierreCajaDto dto)
         {
             var entidad = new CierreCaja
@@ -567,7 +574,7 @@ namespace Andloe.Data
                 Estado = "CERRADO"
             };
 
-            return InsertarCierre(entidad); // reutiliza el método existente
+            return InsertarCierre(entidad);
         }
 
         public void ActualizarVentasConCierreId(long cierreId, string cajaNumero, DateTime desde, DateTime hasta)

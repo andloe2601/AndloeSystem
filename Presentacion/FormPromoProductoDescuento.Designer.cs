@@ -1,6 +1,6 @@
 ﻿using System.Windows.Forms;
 
-namespace Presentation
+namespace Andloe.Presentacion
 {
     partial class FormPromoProductoDescuento
     {

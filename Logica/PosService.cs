@@ -131,11 +131,28 @@ namespace Andloe.Logica
 
         public ItemCarrito? AgregarPorCodigo(string codigo, decimal cantidad = 1, string? clienteCodigo = null)
         {
-            var itemInfo = _prodRepo.GetItemPOS(codigo);
-            if (itemInfo == null)
+            if (string.IsNullOrWhiteSpace(codigo))
                 return null;
 
-            var (codigoProd, desc, precio, itbis) = itemInfo.Value;
+            var prod = _prodRepo.ObtenerPorCodigoOBarras(codigo);
+            if (prod == null || string.IsNullOrWhiteSpace(prod.Codigo))
+                return null;
+
+            prod.NormalizeDefaults();
+
+            var codigoProd = prod.Codigo.Trim();
+            var desc = !string.IsNullOrWhiteSpace(prod.Referencia)
+                ? prod.Referencia.Trim()
+                : !string.IsNullOrWhiteSpace(prod.Descripcion)
+                    ? prod.Descripcion.Trim()
+                    : codigoProd;
+
+            var precio = prod.PrecioVenta;
+            if (precio <= 0m) precio = prod.PrecioCoste;
+            if (precio <= 0m) precio = prod.PrecioCompraPromedio;
+            if (precio <= 0m) precio = prod.UltimoPrecioCompra;
+
+            var itbis = ObtenerItbisPctProducto(prod);
 
             if (!ConfigService.PermitirStockNegativo)
             {
@@ -146,9 +163,7 @@ namespace Andloe.Logica
                         .Where(x => x.ProductoCodigo == codigoProd)
                         .Sum(x => x.Cantidad);
 
-                    var totalSolicitado = enCarrito + cantidad;
-
-                    if (stockActual < totalSolicitado)
+                    if (stockActual < enCarrito + cantidad)
                         return null;
                 }
                 catch
@@ -157,13 +172,9 @@ namespace Andloe.Logica
                 }
             }
 
-            var prodFull = _productoRepo.ObtenerPorCodigo(codigoProd);
-            int? categoriaId = prodFull?.CategoriaId;
-            int? subcategoriaId = prodFull?.SubcategoriaId;
-
+            var existente = Carrito.FirstOrDefault(x => x.ProductoCodigo == codigoProd);
             ItemCarrito item;
 
-            var existente = Carrito.FirstOrDefault(x => x.ProductoCodigo == codigoProd);
             if (existente != null)
             {
                 existente.Cantidad += cantidad;
@@ -171,30 +182,28 @@ namespace Andloe.Logica
             }
             else
             {
-                var nuevo = new ItemCarrito
+                item = new ItemCarrito
                 {
                     ProductoCodigo = codigoProd,
                     Descripcion = desc,
                     Cantidad = cantidad,
                     PrecioUnit = precio,
-                    ItbisPct = itbis
+                    ItbisPct = itbis,
+                    PrecioIncluyeITBIS = prod.PrecioIncluyeITBIS
                 };
 
-                Carrito.Add(nuevo);
-                item = nuevo;
+                Carrito.Add(item);
             }
 
             AplicarPromoEnItem(
                 clienteCodigo: clienteCodigo,
                 item: item,
-                categoriaId: categoriaId,
-                subcategoriaId: subcategoriaId
+                categoriaId: prod.CategoriaId,
+                subcategoriaId: prod.SubcategoriaId
             );
 
             if (!string.IsNullOrWhiteSpace(clienteCodigo))
-            {
                 _promoService.AplicarPromosCarrito(Carrito, clienteCodigo);
-            }
 
             return item;
         }
@@ -217,6 +226,34 @@ namespace Andloe.Logica
 
             return (Math.Round(s, 2), Math.Round(i, 2), Math.Round(t, 2));
         }
+
+        private decimal ObtenerItbisPctProducto(Producto prod)
+        {
+            if (prod == null)
+                return 0m;
+
+            if (prod.EsExento)
+                return 0m;
+
+            if (!prod.ImpuestoId.HasValue || prod.ImpuestoId.Value <= 0)
+                return 0m;
+
+            using var cn = Db.GetOpenConnection();
+            using var cmd = new SqlCommand(@"
+SELECT TOP (1)
+    ISNULL(Porcentaje, 0)
+FROM dbo.Impuesto
+WHERE ImpuestoId = @ImpuestoId;", cn);
+
+            cmd.Parameters.Add("@ImpuestoId", SqlDbType.Int).Value = prod.ImpuestoId.Value;
+
+            var value = cmd.ExecuteScalar();
+
+            return value == null || value == DBNull.Value
+                ? 0m
+                : Convert.ToDecimal(value);
+        }
+
 
         // ================== CERRAR VENTA ==================
 
@@ -341,7 +378,8 @@ namespace Andloe.Logica
                         Importe = it.Importe,
                         TotalLinea = it.Total,
                         DescuentoPct = it.DescuentoPct,
-                        DescuentoMonto = it.DescuentoMonto
+                        DescuentoMonto = it.DescuentoMonto,
+                        PrecioIncluyeITBIS = it.PrecioIncluyeITBIS
                     };
 
                     _lineRepo.InsertLinea(lin, tx);
@@ -439,14 +477,15 @@ namespace Andloe.Logica
         // ================== PAGOS POS ==================
 
         public void GuardarPagosPOS(
-     long ventaId,
-     IEnumerable<PagoLineaResult> pagos,
-     string usuario,
-     int cajaId,
-     string? cajaNumero)
+    long ventaId,
+    IEnumerable<PagoLineaResult> pagos,
+    string usuario,
+    int cajaId,
+    string? cajaNumero)
         {
             var lista = pagos?.ToList() ?? new();
-            if (lista.Count == 0) return;
+            if (lista.Count == 0)
+                return;
 
             using var cn = Db.GetOpenConnection();
             using var tx = cn.BeginTransaction();
@@ -455,21 +494,53 @@ namespace Andloe.Logica
             {
                 foreach (var p in lista)
                 {
+                    if (string.IsNullOrWhiteSpace(p.FormaPagoCodigo))
+                        throw new InvalidOperationException(
+                            "El pago no tiene FormaPagoCodigo. No se puede registrar en POS_Pago.");
+
                     using var cmd = new SqlCommand(@"
 INSERT INTO dbo.POS_Pago
-(Fecha, MonedaCodigo, TasaCambio, Monto, MontoBase, FormaPagoCodigo, Referencia, Entidad,
- Observacion, Usuario, CajaId, POS_CajaNumero, VentaId, Estado)
+(
+    Fecha,
+    MonedaCodigo,
+    TasaCambio,
+    Monto,
+    MontoBase,
+    Referencia,
+    Entidad,
+    Observacion,
+    Usuario,
+    CajaId,
+    VentaId,
+    Estado,
+    POS_CajaNumero,
+    FormaPagoCodigo
+)
 VALUES
-(@Fecha, @MonedaCodigo, @TasaCambio, @Monto, @MontoBase, @FormaPagoCodigo, @Referencia, @Entidad,
- @Observacion, @Usuario, @CajaId, @POS_CajaNumero, @VentaId, @Estado);", cn, tx);
+(
+    @Fecha,
+    @MonedaCodigo,
+    @TasaCambio,
+    @Monto,
+    @MontoBase,
+    @Referencia,
+    @Entidad,
+    @Observacion,
+    @Usuario,
+    @CajaId,
+    @VentaId,
+    @Estado,
+    @POS_CajaNumero,
+    @FormaPagoCodigo
+);", cn, tx);
 
                     cmd.Parameters.Add("@Fecha", SqlDbType.DateTime).Value = DateTime.Now;
                     cmd.Parameters.Add("@MonedaCodigo", SqlDbType.VarChar, 3).Value = p.MonedaCodigo;
 
-                    var tc = cmd.Parameters.Add("@TasaCambio", SqlDbType.Decimal);
-                    tc.Precision = 18;
-                    tc.Scale = 6;
-                    tc.Value = p.TasaCambio <= 0 ? 1m : p.TasaCambio;
+                    var tasa = cmd.Parameters.Add("@TasaCambio", SqlDbType.Decimal);
+                    tasa.Precision = 18;
+                    tasa.Scale = 6;
+                    tasa.Value = p.TasaCambio <= 0 ? 1m : p.TasaCambio;
 
                     var monto = cmd.Parameters.Add("@Monto", SqlDbType.Decimal);
                     monto.Precision = 18;
@@ -481,20 +552,24 @@ VALUES
                     montoBase.Scale = 2;
                     montoBase.Value = p.MontoBase;
 
-                    cmd.Parameters.Add("@FormaPagoCodigo", SqlDbType.VarChar, 2).Value = p.FormaPagoCodigo;
                     cmd.Parameters.Add("@Referencia", SqlDbType.VarChar, 60).Value = "POS";
                     cmd.Parameters.Add("@Entidad", SqlDbType.VarChar, 80).Value = "CAJA POS";
-                    cmd.Parameters.Add("@Observacion", SqlDbType.VarChar, 200).Value = $"Pago POS {p.NombreMedio}";
-                    cmd.Parameters.Add("@Usuario", SqlDbType.VarChar, 50).Value = usuario;
+
+                    cmd.Parameters.Add("@Observacion", SqlDbType.VarChar, 200).Value =
+                        string.IsNullOrWhiteSpace(p.NombreMedio)
+                            ? (object)DBNull.Value
+                            : $"Pago POS {p.NombreMedio}".Trim();
+
+                    cmd.Parameters.Add("@Usuario", SqlDbType.VarChar, 50).Value =
+                        string.IsNullOrWhiteSpace(usuario) ? (object)DBNull.Value : usuario.Trim();
+
                     cmd.Parameters.Add("@CajaId", SqlDbType.Int).Value = cajaId;
-
-                    if (string.IsNullOrWhiteSpace(cajaNumero))
-                        cmd.Parameters.Add("@POS_CajaNumero", SqlDbType.NVarChar, 20).Value = DBNull.Value;
-                    else
-                        cmd.Parameters.Add("@POS_CajaNumero", SqlDbType.NVarChar, 20).Value = cajaNumero;
-
                     cmd.Parameters.Add("@VentaId", SqlDbType.BigInt).Value = ventaId;
                     cmd.Parameters.Add("@Estado", SqlDbType.VarChar, 12).Value = "APLICADO";
+                    cmd.Parameters.Add("@POS_CajaNumero", SqlDbType.NVarChar, 20).Value =
+                        string.IsNullOrWhiteSpace(cajaNumero) ? (object)DBNull.Value : cajaNumero.Trim();
+
+                    cmd.Parameters.Add("@FormaPagoCodigo", SqlDbType.VarChar, 2).Value = p.FormaPagoCodigo.Trim();
 
                     cmd.ExecuteNonQuery();
                 }
@@ -508,48 +583,6 @@ VALUES
             }
         }
 
-        private int ResolverMedioPagoIdDesdeFormaFiscal(string formaPagoCodigo)
-        {
-            using var cn = Db.GetOpenConnection();
-            using var cmd = new SqlCommand(@"
-SELECT TOP (1) MedioPagoId
-FROM dbo.MedioPago
-WHERE
-(
-    @FormaPagoCodigo = '1' AND Nombre LIKE '%Efectivo%'
-)
-OR
-(
-    @FormaPagoCodigo = '2' AND
-    (
-        Nombre LIKE '%Transfer%'
-        OR Nombre LIKE '%Cheque%'
-        OR Nombre LIKE '%Depósito%'
-        OR Nombre LIKE '%Deposito%'
-    )
-)
-OR
-(
-    @FormaPagoCodigo = '3' AND Nombre LIKE '%Tarjeta%'
-)
-OR
-(
-    @FormaPagoCodigo = '4' AND
-    (
-        Nombre LIKE '%Crédito%'
-        OR Nombre LIKE '%Credito%'
-    )
-);", cn);
-
-            cmd.Parameters.Add("@FormaPagoCodigo", SqlDbType.VarChar, 2).Value = formaPagoCodigo;
-
-            var val = cmd.ExecuteScalar();
-            if (val == null || val == DBNull.Value)
-                throw new InvalidOperationException(
-                    $"No se encontró un MedioPago válido en dbo.MedioPago para la forma fiscal '{formaPagoCodigo}'.");
-
-            return Convert.ToInt32(val);
-        }
 
         private sealed class CajaContaCtas
         {

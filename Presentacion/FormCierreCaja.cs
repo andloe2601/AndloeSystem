@@ -5,7 +5,7 @@ using Andloe.Logica;
 using Andloe.Data;
 using Andloe.Entidad;
 
-namespace Presentation
+namespace Andloe.Presentation
 {
     public partial class FormCierreCaja : Form
     {

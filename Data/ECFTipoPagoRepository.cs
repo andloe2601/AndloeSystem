@@ -22,10 +22,10 @@ ORDER BY TipoPagoECFId;", cn);
             {
                 list.Add(new ECFTipoPago
                 {
-                    TipoPagoECFId = rd.IsDBNull(0) ? 0 : rd.GetInt32(0),
-                    CodigoDGII = rd.IsDBNull(1) ? "" : rd.GetString(1),
-                    Descripcion = rd.IsDBNull(2) ? "" : rd.GetString(2),
-                    Activo = !rd.IsDBNull(3) && Convert.ToBoolean(rd.GetValue(3))
+                    TipoPagoECFId = rd.GetInt32(0),
+                    CodigoDGII = rd.GetString(1),
+                    Descripcion = rd.GetString(2),
+                    Activo = rd.GetBoolean(3)
                 });
             }
 
