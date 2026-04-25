@@ -50,6 +50,28 @@ namespace Andloe.Logica
             _productoRepo = productoRepo;
         }
 
+        private void ValidarTipoComprobanteCliente(string clienteCodigo, int tipoECFId)
+        {
+            var cli = string.IsNullOrWhiteSpace(clienteCodigo)
+                ? null
+                : _clienteRepo.BuscarPorCodigoORnc(clienteCodigo);
+
+            var rnc = (cli?.RncCedula ?? "").Trim();
+
+            var esConsumidorFinal =
+                string.IsNullOrWhiteSpace(rnc) ||
+                rnc == "000000000" ||
+                rnc == "00000000000";
+
+            if (tipoECFId == 1 && esConsumidorFinal)
+                throw new InvalidOperationException(
+                    "No se puede emitir crédito fiscal (E31) a consumidor final.");
+
+            if (tipoECFId == 8 && esConsumidorFinal)
+                throw new InvalidOperationException(
+                    "No se puede emitir comprobante gubernamental (E45) a consumidor final.");
+        }
+
         // ================== DESCUENTOS ==================
 
         public decimal CalcularMaxDescuentoPct(string clienteCodigo, string productoCodigo)

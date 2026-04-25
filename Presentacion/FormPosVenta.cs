@@ -1384,34 +1384,21 @@ ORDER BY TRY_CONVERT(INT, FormaPagoCodigo);");
 
                 var primerPago = result.Pagos[0];
                 var totalesAntes = _pos.Totales();
-                                string? clienteCodigo = _clienteActual?.Codigo;
+
+                string? clienteCodigo = _clienteActual?.Codigo;
                 if (string.IsNullOrWhiteSpace(clienteCodigo))
-                    throw new InvalidOperationException(
-                        "No hay cliente seleccionado válido para registrar la venta fiscal. Debe cargarlo desde tabla/configuración correcta.");
+                    throw new InvalidOperationException("Debe seleccionar un cliente válido.");
 
                 var tipoECFId = _tipoComprobanteActual.TipoECFId;
-                if (tipoECFId <= 0)
-                    throw new InvalidOperationException("El tipo de comprobante fiscal seleccionado no es válido.");
 
-                var tieneDocumentoCliente = !string.IsNullOrWhiteSpace(_clienteActual?.RncCedula);
-
-                if (!tieneDocumentoCliente && tipoECFId != 2)
-                    throw new InvalidOperationException(
-                        "Consumidor final solo puede facturarse con comprobante de consumo.");
-
-                if (tieneDocumentoCliente && tipoECFId == 2)
-                {
-                    // opcional: permitirlo o no, según tu política
-                }
+                // 🔥 VALIDACIÓN CLAVE
+                ValidarComprobanteContraCliente(tipoECFId);
 
                 var formaPagoFiscal = primerPago.FormaPagoCodigo;
                 if (string.IsNullOrWhiteSpace(formaPagoFiscal))
-                    throw new InvalidOperationException(
-                        "El pago no trae FormaPagoCodigo. Debe venir correctamente alimentado desde tabla.");
+                    throw new InvalidOperationException("Forma de pago fiscal inválida.");
 
                 var tipoPagoECFId = ResolverTipoPagoECFId(formaPagoFiscal);
-                if (tipoPagoECFId <= 0)
-                    throw new InvalidOperationException("El tipo de pago ECF no es válido.");
 
                 var ventaId = _pos.CerrarVenta(
                     usuario: _usuarioPos,
@@ -1435,11 +1422,11 @@ ORDER BY TRY_CONVERT(INT, FormaPagoCodigo);");
 
                 var fiscal = new PosFiscalService();
                 var fiscalResult = fiscal.GenerarFacturaFiscalDesdeVenta(
-                    ventaId: ventaId,
-                    tipoECFId: tipoECFId,
-                    tipoPagoECFId: tipoPagoECFId,
-                    formaPagoFiscal: formaPagoFiscal,
-                    usuario: _usuarioPos);
+                    ventaId,
+                    tipoECFId,
+                    tipoPagoECFId,
+                    formaPagoFiscal,
+                    _usuarioPos);
 
                 if (fiscalResult == null || fiscalResult.FacturaId <= 0)
                     throw new InvalidOperationException("No se pudo generar la factura fiscal.");
@@ -1453,22 +1440,11 @@ ORDER BY TRY_CONVERT(INT, FormaPagoCodigo);");
 
                 LimpiarVentaInterna();
 
-                var estadoDgii = string.IsNullOrWhiteSpace(ecf?.EstadoDGII) ? "N/D" : ecf!.EstadoDGII!;
-                var estadoProceso = string.IsNullOrWhiteSpace(ecf?.EstadoProceso)
-                    ? (string.IsNullOrWhiteSpace(fiscalResult.EstadoECF) ? "N/D" : fiscalResult.EstadoECF!)
-                    : ecf!.EstadoProceso!;
-                var encf = string.IsNullOrWhiteSpace(ecf?.ENCF) ? "Pendiente" : ecf!.ENCF!;
-                var trackId = string.IsNullOrWhiteSpace(ecf?.TrackId) ? "Pendiente" : ecf!.TrackId!;
-
                 MessageBox.Show(
                     $"Venta procesada correctamente.\n" +
                     $"Venta ID: {ventaId}\n" +
                     $"Factura ID: {fiscalResult.FacturaId}\n" +
-                    $"Documento: {fiscalResult.NumeroDocumento}\n" +
-                    $"e-NCF: {encf}\n" +
-                    $"Estado DGII: {estadoDgii}\n" +
-                    $"Estado Proceso: {estadoProceso}\n" +
-                    $"TrackId: {trackId}",
+                    $"e-NCF: {ecf?.ENCF ?? "Pendiente"}",
                     "POS",
                     MessageBoxButtons.OK,
                     MessageBoxIcon.Information);
@@ -1482,8 +1458,33 @@ ORDER BY TRY_CONVERT(INT, FormaPagoCodigo);");
                     MessageBoxIcon.Error);
             }
         }
+                
+
+        private void ValidarComprobanteContraCliente(int tipoECFId)
+        {
+            var rnc = (_clienteActual?.RncCedula ?? "").Trim();
+
+            var esConsumidorFinal =
+                string.IsNullOrWhiteSpace(rnc) ||
+                rnc == "000000000" ||
+                rnc == "00000000000";
+
+            // E31 - Crédito fiscal
+            if (tipoECFId == 1 && esConsumidorFinal)
+                throw new InvalidOperationException(
+                    "Crédito fiscal (E31) requiere un cliente con RNC/Cédula válido.");
+
+            // E45 - Gubernamental
+            if (tipoECFId == 8 && esConsumidorFinal)
+                throw new InvalidOperationException(
+                    "Comprobante gubernamental (E45) requiere un RNC válido.");
+
+            // E32 - Consumidor final → OK siempre
+        }
 
         private readonly ECFTipoPagoRepository _ecfTipoPagoRepo = new();
+
+
 
         private int ResolverTipoPagoECFId(string formaPagoCodigo)
         {

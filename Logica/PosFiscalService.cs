@@ -85,6 +85,9 @@ namespace Andloe.Logica
 
                     numeroDocumento = ResolverNumeroDocumento(cn, tx, venta);
 
+                    var montoGravadoTotal = Math.Round(lineas.Where(x => x.ItbisPorc > 0).Sum(x => x.ImporteMoneda), 2);
+                    var montoExentoTotal = Math.Round(lineas.Where(x => x.ItbisPorc <= 0).Sum(x => x.ImporteMoneda), 2);
+
                     facturaId = InsertarFacturaCab(
                         cn,
                         tx,
@@ -95,17 +98,26 @@ namespace Andloe.Logica
                         tipoECFId,
                         tipoPagoECFId,
                         formaPagoFiscal,
-                        usuario);
+                        usuario,
+                        montoGravadoTotal,
+                        montoExentoTotal);
 
                     InsertarFacturaDet(cn, tx, facturaId, lineas);
                     InsertarFacturaPago(cn, tx, facturaId, venta, usuario);
                     InsertarFacturaFormaPago(cn, tx, facturaId, ventaId);
+
+                    // Corrige SubTotal, TotalImpuesto, TotalGeneral,
+                    // MontoGravadoTotal, MontoExentoTotal y FacturaFormaPago.MontoPago
+                    RecalcularTotalesFactura(cn, tx, facturaId);
+
+                    var montoTotalFiscal = ObtenerTotalGeneralFactura(cn, tx, facturaId);
+
                     CrearEcfDocumentoBase(
                         cn,
                         tx,
                         facturaId,
                         tipoECFId,
-                        venta.Total);
+                        montoTotalFiscal);
 
                     MarcarVentaComoFacturadaFiscalmente(cn, tx, ventaId, facturaId);
 
@@ -215,8 +227,9 @@ SELECT
     ImporteMoneda,
     ItbisMoneda,
     TotalMoneda,
-    DescuentoPct,
-    DescuentoMonto
+   DescuentoPct,
+DescuentoMonto,
+PrecioIncluyeITBIS
 FROM dbo.VentaLin
 WHERE VentaId = @VentaId
 ORDER BY Linea;", cn, tx);
@@ -241,6 +254,7 @@ ORDER BY Linea;", cn, tx);
                     ProductoCodigo = rd.IsDBNull(10) ? null : rd.GetString(10),
                     PrecioUnit = rd.IsDBNull(11) ? rd.GetDecimal(5) : rd.GetDecimal(11),
                     DescuentoMoneda = rd.IsDBNull(12) ? rd.GetDecimal(6) : rd.GetDecimal(12),
+                    PrecioIncluyeITBIS = !rd.IsDBNull(18) && Convert.ToBoolean(rd.GetValue(18)),
                     ImporteMoneda = rd.IsDBNull(13) ? rd.GetDecimal(9) : rd.GetDecimal(13),
                     ItbisMoneda = rd.IsDBNull(14) ? rd.GetDecimal(8) : rd.GetDecimal(14),
                     TotalMoneda = rd.IsDBNull(15)
@@ -454,16 +468,18 @@ WHERE NumeroDocumento = @NumeroDocumento;", cn, tx);
         }
 
         private int InsertarFacturaCab(
-    SqlConnection cn,
-    SqlTransaction tx,
-    VentaCabLite venta,
-    ClienteSnapshotLite cliente,
-    FacturaContextoLite contexto,
-    string numeroDocumento,
-    int tipoECFId,
-    int tipoPagoECFId,
-    string formaPagoFiscal,
-    string usuario)
+     SqlConnection cn,
+     SqlTransaction tx,
+     VentaCabLite venta,
+     ClienteSnapshotLite cliente,
+     FacturaContextoLite contexto,
+     string numeroDocumento,
+     int tipoECFId,
+     int tipoPagoECFId,
+     string formaPagoFiscal,
+     string usuario,
+     decimal montoGravadoTotal,
+     decimal montoExentoTotal)
         {
             var nombreClienteFiscal = Coalesce(cliente.Nombre, venta.NombreCliente);
             if (string.IsNullOrWhiteSpace(nombreClienteFiscal))
@@ -625,8 +641,8 @@ VALUES
             cmd.Parameters.Add("@DireccionCompradorSnapshot", SqlDbType.NVarChar, 800).Value =
                 (object?)cliente.Direccion ?? DBNull.Value;
 
-            AddDecimal(cmd, "@MontoGravadoTotal", venta.Subtotal);
-            AddDecimal(cmd, "@MontoExentoTotal", 0m);
+            AddDecimal(cmd, "@MontoGravadoTotal", montoGravadoTotal);
+            AddDecimal(cmd, "@MontoExentoTotal", montoExentoTotal);
 
             cmd.Parameters.Add("@EstadoECF", SqlDbType.VarChar, 20).Value = ESTADO_ECF;
             cmd.Parameters.Add("@TipoPagoECFHeader", SqlDbType.VarChar, 1).Value = formaPagoFiscal;
@@ -638,10 +654,10 @@ VALUES
         }
 
         private void InsertarFacturaDet(
-     SqlConnection cn,
-     SqlTransaction tx,
-     int facturaId,
-     IEnumerable<VentaLinLite> lineas)
+    SqlConnection cn,
+    SqlTransaction tx,
+    int facturaId,
+    IEnumerable<VentaLinLite> lineas)
         {
             foreach (var l in lineas.OrderBy(x => x.Linea))
             {
@@ -708,6 +724,7 @@ VALUES
 );", cn, tx);
 
                 cmd.Parameters.Add("@FacturaId", SqlDbType.Int).Value = facturaId;
+
                 var productoCodigo = Coalesce(l.ProductoCodigo, l.NoProducto) ?? "";
                 var unidad = _prodRepo.ObtenerUnidadPorCodigo(productoCodigo, UNIDAD_DEFAULT) ?? UNIDAD_DEFAULT;
 
@@ -740,12 +757,18 @@ VALUES
 
                 AddDecimal(cmd, "@MontoGravado", montoGravado);
                 AddDecimal(cmd, "@MontoExento", montoExento);
+
                 cmd.Parameters.Add("@EsExento", SqlDbType.Bit).Value = l.ItbisPorc <= 0;
+
                 AddDecimal(cmd, "@PrecioUnitarioBase", l.PrecioUnitario, 18, 4);
                 AddDecimal(cmd, "@SubtotalLineaAntesImpuesto", l.ImporteMoneda);
-                cmd.Parameters.Add("@IndicadorITBISIncluido", SqlDbType.Bit).Value = l.PrecioIncluyeITBIS;
+
+                cmd.Parameters.Add("@IndicadorITBISIncluido", SqlDbType.Bit).Value =
+                    l.PrecioIncluyeITBIS;
+
                 cmd.Parameters.Add("@CodigoProducto", SqlDbType.VarChar, 20).Value =
-                    (object?)Coalesce(l.ProductoCodigo, l.NoProducto) ?? DBNull.Value;
+                    (object?)productoCodigo ?? DBNull.Value;
+
                 AddDecimal(cmd, "@SubtotalLinea", l.ImporteMoneda, 18, 6);
                 AddDecimal(cmd, "@BaseImponible", l.ImporteMoneda, 18, 6);
 
@@ -963,6 +986,29 @@ WHERE FacturaId = @FacturaId;", cn);
                 TipoECFId = rd.IsDBNull(1) ? 0 : rd.GetInt32(1),
                 ENCF = rd.IsDBNull(2) ? null : rd.GetString(2)
             };
+        }
+
+        private void RecalcularTotalesFactura(SqlConnection cn, SqlTransaction tx, int facturaId)
+        {
+            using var cmd = new SqlCommand("dbo.sp_ECF_RecalcularTotalesFactura", cn, tx);
+            cmd.CommandType = CommandType.StoredProcedure;
+            cmd.Parameters.Add("@FacturaId", SqlDbType.Int).Value = facturaId;
+            cmd.ExecuteNonQuery();
+        }
+
+        private decimal ObtenerTotalGeneralFactura(SqlConnection cn, SqlTransaction tx, int facturaId)
+        {
+            using var cmd = new SqlCommand(@"
+SELECT ISNULL(TotalGeneral, 0)
+FROM dbo.FacturaCab
+WHERE FacturaId = @FacturaId;", cn, tx);
+
+            cmd.Parameters.Add("@FacturaId", SqlDbType.Int).Value = facturaId;
+
+            var value = cmd.ExecuteScalar();
+            return value == null || value == DBNull.Value
+                ? 0m
+                : Convert.ToDecimal(value);
         }
 
         private static string ResolverPrefijoEcfDesdeTipoId(int tipoEcfId)

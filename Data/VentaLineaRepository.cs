@@ -33,6 +33,7 @@ namespace Andloe.Data
                     Importe,
                     ProductoCodigo,
                     PrecioUnit,
+PrecioIncluyeITBIS,
                     DescuentoMoneda,
                     ImporteMoneda,
                     ItbisMoneda,
@@ -51,6 +52,7 @@ namespace Andloe.Data
                     @Importe,
                     @ProductoCodigo,
                     @PrecioUnit,
+                    @PrecioIncluyeITBIS,
                     @DescuentoMoneda,
                     @ImporteMoneda,
                     @ItbisMoneda,
@@ -98,6 +100,10 @@ namespace Andloe.Data
             // PrecioUnit (segunda columna)
             var pPU2 = cmd.Parameters.Add("@PrecioUnit", SqlDbType.Decimal);
             pPU2.Precision = 18; pPU2.Scale = 2; pPU2.Value = l.PrecioUnit;
+
+            // Precio incluye ITBIS
+            cmd.Parameters.Add("@PrecioIncluyeITBIS", SqlDbType.Bit)
+                .Value = l.PrecioIncluyeITBIS;
 
             // Moneda (igual a base en POS)
             cmd.Parameters.Add("@DescuentoMoneda", SqlDbType.Decimal).Value = 0m;
